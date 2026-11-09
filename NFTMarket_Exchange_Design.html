@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NFT 交易市场与订单簿系统设计</title>
+<style>
+:root{--bg:#0b1020;--panel:#121a2d;--panel2:#17223a;--text:#e8eefc;--muted:#aebbd4;--line:#2b3a5e;--accent:#76e4c5;--accent2:#8bb7ff;--warn:#ffd479;--danger:#ff9d9d;--shadow:0 18px 50px #0004}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(circle at 20% 0,#192b4e 0,#0b1020 42%);color:var(--text);font:16px/1.75 system-ui,-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}a{color:var(--accent2);text-decoration:none}a:hover{text-decoration:underline}.wrap{max-width:1280px;margin:auto;padding:32px 22px 70px}.hero{padding:42px 42px 36px;border:1px solid var(--line);border-radius:24px;background:linear-gradient(135deg,#172943cc,#10172bd9);box-shadow:var(--shadow)}.eyebrow{color:var(--accent);letter-spacing:.13em;text-transform:uppercase;font-size:12px;font-weight:700}.hero h1{font-size:clamp(30px,5vw,56px);line-height:1.12;margin:12px 0}.hero p{max-width:900px;color:var(--muted);font-size:18px}.layout{display:grid;grid-template-columns:245px 1fr;gap:26px;margin-top:26px}.toc{position:sticky;top:18px;align-self:start;padding:18px;border:1px solid var(--line);border-radius:18px;background:#0e1628e6}.toc strong{display:block;margin-bottom:10px}.toc a{display:block;padding:4px 0;color:var(--muted);font-size:14px}.toc a:hover{color:var(--accent)}main{min-width:0}section{margin:0 0 22px;padding:28px 30px;border:1px solid var(--line);border-radius:20px;background:#10182be8;box-shadow:0 12px 30px #0002}h2{font-size:27px;margin:0 0 16px}h3{font-size:20px;margin:26px 0 10px;color:var(--accent2)}h4{margin:18px 0 8px;color:var(--warn)}p{margin:9px 0;color:#dbe5f8}ul,ol{padding-left:24px;color:#dbe5f8}li{margin:4px 0}.lead{font-size:18px;color:#eef4ff}.note{padding:14px 16px;border-left:3px solid var(--accent);background:#17332866;border-radius:10px;margin:15px 0}.warning{border-left-color:var(--warn);background:#46371955}.danger{border-left-color:var(--danger);background:#4b1e2a55}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.card{padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--panel2)}.card h4{margin-top:0}.tag{display:inline-block;padding:3px 9px;border-radius:999px;background:#263656;color:var(--accent);font-size:12px;margin:2px 4px 2px 0}.table-wrap{overflow:auto;margin:12px 0}table{width:100%;border-collapse:collapse;min-width:620px}th,td{text-align:left;vertical-align:top;border-bottom:1px solid var(--line);padding:10px 12px}th{color:var(--accent);background:#17243c}td{color:#d9e3f5}code{padding:2px 5px;border-radius:5px;background:#0a1020;color:#b7f1dc}pre{overflow:auto;padding:16px;border:1px solid var(--line);border-radius:12px;background:#080d18;color:#d8e7ff;line-height:1.55}.flow{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin:15px 0}.node{padding:10px 14px;border:1px solid #4d709d;border-radius:11px;background:#1a2c4c;color:#edf5ff}.arrow{color:var(--accent);font-size:21px}.arch{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:stretch;margin:14px 0}.arch .box{padding:16px;border-radius:14px;border:1px solid var(--line);background:linear-gradient(180deg,#1b2c4a,#121c31)}.arch .box b{display:block;color:var(--accent);margin-bottom:6px}.state{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:15px 0}.state div{padding:13px 8px;text-align:center;border:1px solid var(--line);border-radius:12px;background:#182742}.state .active{border-color:var(--accent);box-shadow:0 0 0 1px #76e4c544}.kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.kpi div{padding:15px;border-radius:14px;background:#192844;border:1px solid var(--line)}.kpi b{display:block;font-size:25px;color:var(--accent)}details{border:1px solid var(--line);border-radius:12px;margin:10px 0;background:#121d33}summary{cursor:pointer;padding:12px 15px;color:var(--accent2);font-weight:700}details>div{padding:0 15px 13px}.small{font-size:13px;color:var(--muted)}.footer{color:var(--muted);text-align:center;margin-top:24px;font-size:13px}@media(max-width:900px){.layout{grid-template-columns:1fr}.toc{position:static}.arch{grid-template-columns:repeat(2,1fr)}.state{grid-template-columns:repeat(2,1fr)}.kpi{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.wrap{padding:14px 10px 45px}.hero,section{padding:22px 17px}.grid,.arch{grid-template-columns:1fr}.hero p{font-size:16px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="hero">
+<div class="eyebrow">NFT MARKET / ORDERBOOK DESIGN</div>
+<h1>NFT 交易市场与订单簿系统设计</h1>
+<p>一份从业务建模到技术架构的可落地设计。以 EasySwap 的 List、Bid、Collection Bid、Vault 和链上事件同步为背景，说明一个完整 NFT 交易市场应该如何拆分产品、合约、索引、API 和前端。</p>
+<div><span class="tag">业务模型</span><span class="tag">智能合约</span><span class="tag">订单簿</span><span class="tag">链下索引</span><span class="tag">安全与验收</span></div>
+</header>
+<div class="layout">
+<nav class="toc"><strong>目录</strong><a href="#overview">1. 产品总览</a><a href="#model">2. 业务建模</a><a href="#order">3. 订单模型</a><a href="#state">4. 生命周期</a><a href="#contract">5. 合约架构</a><a href="#offchain">6. 链下架构</a><a href="#data">7. 数据模型</a><a href="#api">8. API 与前端</a><a href="#settlement">9. 撮合与结算</a><a href="#security">10. 安全与一致性</a><a href="#roadmap">11. 落地路线</a><a href="#easy">12. EasySwap 对照</a></nav>
+<main>
+<section id="overview"><h2>1. 产品总览：市场到底要完成什么</h2>
+<p class="lead">NFT 市场不是图片展示站，而是“资产发现 + 订单表达 + 撮合 + 原子结算 + 历史数据”的完整系统。</p>
+<div class="grid"><div class="card"><h4>用户问题</h4><ul><li>买家找不到可靠、可比较的 NFT 和价格。</li><li>卖家无法公开表达卖价、接受报价或批量交易。</li><li>双方不愿把资产先交给陌生人托管。</li><li>链上原始事件难以直接用于搜索、排名和 Portfolio。</li></ul></div><div class="card"><h4>产品承诺</h4><ul><li>所有权和成交结果由链上合约最终确认。</li><li>订单有价格、数量、有效期和取消语义。</li><li>成交时 NFT 与资金原子交换，要么全成要么全败。</li><li>链下服务提供快查询、可读状态和运营能力。</li></ul></div></div>
+<div class="note"><b>推荐定位：</b>首期做“单链 + ERC-721 + 原生 ETH/WETH + List/Bid/Collection Bid”的闭环。先把资产安全、订单状态和数据一致性做对，再扩展多链、ERC-1155、聚合市场和 AMM。</div>
+<div class="flow"><div class="node">NFT 项目方发行资产</div><span class="arrow">→</span><div class="node">卖家创建 Listing</div><span class="arrow">→</span><div class="node">买家出价或直接购买</div><span class="arrow">→</span><div class="node">订单簿撮合</div><span class="arrow">→</span><div class="node">合约结算</div><span class="arrow">→</span><div class="node">索引与展示</div></div>
+</section>
+<section id="model"><h2>2. 业务建模：角色、资产和收益</h2>
+<h3>2.1 角色</h3>
+<div class="table-wrap"><table><thead><tr><th>角色</th><th>目标</th><th>获得</th><th>承担/失去</th></tr></thead><tbody>
+<tr><td>卖家 Seller</td><td>出售自己持有的 NFT</td><td>成交价、流动性、价格发现</td><td>NFT、Gas、平台费、价格上涨后的潜在收益</td></tr>
+<tr><td>买家 Buyer</td><td>买入 NFT 或取得某种权益</td><td>NFT 所有权、使用权、转售权</td><td>ETH/WETH、Gas、价格下跌风险</td></tr>
+<tr><td>创作者 Creator</td><td>发行资产、经营品牌或内容</td><td>发行收入、社区、授权和可能的版税</td><td>运营、版权、合约和声誉风险</td></tr>
+<tr><td>平台 Platform</td><td>提供发现、订单、撮合、结算和数据服务</td><td>协议费、数据和网络效应</td><td>合约安全、基础设施、索引和客服成本</td></tr>
+<tr><td>执行/索引服务</td><td>监听事件、补扫、更新派生数据</td><td>运营权限、服务收入（若独立）</td><td>RPC、数据库、重组和数据错误风险</td></tr>
+</tbody></table></div>
+<h3>2.2 资产权益</h3>
+<div class="grid"><div class="card"><h4>NFT 本体</h4><p>由 <code>(chainId, collection, tokenId)</code> 唯一确定。ERC-721 数量固定为 1；若支持 ERC-1155，还要增加数量与批量转移语义。</p></div><div class="card"><h4>订单权利</h4><p>订单不是 NFT 所有权，而是“在条件满足时，以约定价格交换资产”的可验证意愿。订单可以被取消、过期、部分成交或完全成交。</p></div><div class="card"><h4>使用权益</h4><p>会员、游戏道具、门票、品牌授权等由项目方业务定义。交易市场只能确认 token 归属，不能自动保证现实权益。</p></div><div class="card"><h4>平台费用</h4><p>建议明确协议费、创作者版税、买方/卖方承担方、最小费用、舍入方向和费率上限。费用规则必须在成交前展示。</p></div></div>
+<h3>2.3 收益公式</h3>
+<pre>成交总价 = 单价 × 成交数量
+协议费 = 成交总价 × 协议费率
+创作者版税 = 成交总价 × 版税率（若启用且能执行）
+卖家净收入 = 成交总价 - 协议费 - 创作者版税 - 其他费用
+买家总成本 = 成交总价 + 买方承担费用 + Gas</pre>
+<div class="warning note"><b>业务边界：</b>平台的收入不是成交额本身，而是成交额乘以明确的收费比例。成交额只是 GMV；平台还需要支付 RPC、数据库、前端、运营和安全成本。</div>
+</section>
+<section id="order"><h2>3. 订单模型：订单簿如何表达买卖意愿</h2>
+<h3>3.1 统一订单结构</h3>
+<pre>Order {
+  chainId: uint256,
+  exchange: address,
+  side: List | Bid,
+  saleKind: Item | Collection,
+  maker: address,
+  asset: { collection, tokenId, amount },
+  paymentToken: address,      // address(0)=ETH
+  price: uint256,              // 单位价格
+  quantity: uint256,
+  startTime: uint64,
+  endTime: uint64,             // 0 表示不过期
+  salt: uint256,
+  nonce: uint256,
+  fees: Fee[],
+  signature: bytes
+}</pre>
+<h3>3.2 四种核心订单</h3>
+<div class="grid"><div class="card"><h4>Item Listing</h4><p>卖家指定 collection + tokenId + price。最容易理解，适合首期。</p></div><div class="card"><h4>Item Bid</h4><p>买家指定一个具体 tokenId，报价通常需要锁定 WETH/ETH 或在成交时支付。</p></div><div class="card"><h4>Collection Bid</h4><p>买家只指定 collection，卖家可以用集合中的任意符合条件的 token 接受。</p></div><div class="card"><h4>Trait/Criteria Bid</h4><p>买家指定属性条件。需要额外的链下属性索引和链上校验，建议后置。</p></div></div>
+<h3>3.3 订单簿排序</h3>
+<div class="table-wrap"><table><thead><tr><th>订单方向</th><th>第一排序</th><th>第二排序</th><th>过滤条件</th></tr></thead><tbody><tr><td>List</td><td>价格从低到高</td><td>创建时间从早到晚</td><td>有效期、数量、资产仍可交付</td></tr><tr><td>Bid</td><td>价格从高到低</td><td>创建时间从早到晚</td><td>余额/授权、有效期、报价仍可成交</td></tr></tbody></table></div>
+<p>数据结构可以使用“价格索引 + 同价 FIFO 队列”。链上需要强一致和可验证；链下可以使用 PostgreSQL 的索引表、Redis 缓存和按 collection 分片的撮合视图。</p>
+<h3>3.4 订单唯一性</h3><p>推荐用 EIP-712 结构哈希作为 <code>orderHash</code>，并把 chainId、exchange、paymentToken、salt、nonce 纳入签名域，防止跨链重放、跨合约重放和旧订单重用。</p>
+</section>
+<section id="state"><h2>4. 订单生命周期与状态机</h2>
+<div class="state"><div class="active">CREATED<br><span class="small">已签名/已提交</span></div><div>OPEN<br><span class="small">可成交</span></div><div>PARTIAL<br><span class="small">部分成交</span></div><div>FILLED<br><span class="small">完全成交</span></div><div>CANCELLED / EXPIRED<br><span class="small">终态</span></div></div>
+<h3>4.1 状态转换</h3>
+<div class="table-wrap"><table><thead><tr><th>动作</th><th>前置条件</th><th>状态变化</th><th>资产变化</th></tr></thead><tbody><tr><td>创建 Listing</td><td>持有 NFT 且授权</td><td>→ OPEN</td><td>NFT 托管或保持在卖家钱包</td></tr><tr><td>创建 Bid</td><td>余额足额或允许成交时支付</td><td>→ OPEN</td><td>ETH/WETH 托管或授权</td></tr><tr><td>撮合</td><td>双方订单有效、资产匹配</td><td>OPEN → FILLED / PARTIAL</td><td>NFT 与资金原子交换</td></tr><tr><td>取消</td><td>maker 或授权执行者</td><td>OPEN → CANCELLED</td><td>退回剩余托管资产</td></tr><tr><td>过期</td><td>当前时间 > endTime</td><td>OPEN → EXPIRED</td><td>不能成交，资产按取消/退款规则处理</td></tr><tr><td>编辑</td><td>允许修改的字段变化</td><td>旧订单取消 + 新订单创建</td><td>差额补缴或退款</td></tr></tbody></table></div>
+<h3>4.2 用户看到的状态</h3><p>前端不要只显示“成功/失败”，至少需要区分：等待钱包签名、交易已提交、等待确认、链上成功、链上回滚、订单已被抢先成交、订单已过期、索引服务尚未同步。</p>
+<div class="note"><b>重要：</b>时间到达不会自动触发链上交易。过期是合约在下一次查询/撮合时判断的逻辑状态；如果需要返还托管资产，仍需取消或清理交易。</div>
+</section>
+<section id="contract"><h2>5. 链上合约架构</h2>
+<div class="arch"><div class="box"><b>OrderBook</b>订单入口、撮合、取消、编辑、批量调用</div><div class="box"><b>OrderValidator</b>EIP-712/EIP-1271、过期、nonce、成交量校验</div><div class="box"><b>Vault / Conduit</b>NFT、ETH/WETH 托管和授权转移</div><div class="box"><b>Fee / Royalty</b>协议费、创作者版税、分润和提取</div></div>
+<h3>5.1 推荐合约模块</h3><ol><li><b>Exchange：</b>外部入口，处理 <code>createOrder</code>、<code>cancel</code>、<code>fulfill</code>、<code>bulkFulfill</code>。</li><li><b>OrderValidator：</b>验证签名、域、nonce、资产、价格、有效期和订单状态。</li><li><b>Settlement：</b>统一计算付款、费用、版税和退款，按固定顺序执行资产转移。</li><li><b>Vault/Conduit：</b>可选托管模型。更安全直观，但用户要先锁定资产；非托管模型体验更好，但成交时要重新验证余额和授权。</li><li><b>NonceManager：</b>支持单订单取消、批量 nonce 取消和全局 nonce 失效。</li><li><b>ProtocolManager：</b>管理费率、费收款地址、暂停和升级权限。</li></ol>
+<h3>5.2 两种订单架构的取舍</h3>
+<div class="table-wrap"><table><thead><tr><th>方案</th><th>特点</th><th>优点</th><th>缺点</th><th>适用</th></tr></thead><tbody><tr><td>托管型订单簿</td><td>创建订单时 NFT/资金进入 Vault</td><td>成交确定性高，订单簿清晰</td><td>资金锁定、授权步骤多，合约风险集中</td><td>EasySwap 当前形态、封闭生态</td></tr><tr><td>签名订单</td><td>订单只在链下签名，成交时才转资产</td><td>免锁仓、跨市场分发、体验好</td><td>撮合时可能失效，需处理授权/余额竞争</td><td>开放市场、聚合器、Seaport 类协议</td></tr><tr><td>混合型</td><td>Bid 锁 WETH，List 用签名/授权转移</td><td>兼顾确定性和低摩擦</td><td>状态组合更复杂</td><td>成熟产品的推荐方向</td></tr></tbody></table></div>
+<h3>5.3 事件设计</h3><pre>OrderCreated(orderHash, maker, side, collection, tokenId, quantity, price, expiry)
+OrderCancelled(orderHash, maker, reason)
+OrderFilled(orderHash, counterOrderHash, maker, taker, quantity, price)
+OrderPartiallyFilled(orderHash, filled, remaining)
+AssetTransferred(collection, tokenId, from, to)
+FeePaid(orderHash, recipient, asset, amount)
+NonceInvalidated(maker, nonce)
+ProtocolPaused(account, reason)</pre>
+</section>
+<section id="offchain"><h2>6. 链下技术架构</h2>
+<div class="arch"><div class="box"><b>Web / Wallet</b>Next.js、Wagmi、交易状态机、钱包连接</div><div class="box"><b>API / Query</b>Go/Node、鉴权、搜索、Portfolio、报价聚合</div><div class="box"><b>Indexer</b>区块扫描、事件解析、幂等、重组回滚、补扫</div><div class="box"><b>DB / Cache</b>PostgreSQL/MySQL、Redis、对象存储、任务队列</div></div>
+<h3>6.1 请求链路</h3><div class="flow"><div class="node">浏览器</div><span class="arrow">→</span><div class="node">API Gateway</div><span class="arrow">→</span><div class="node">Query Service</div><span class="arrow">→</span><div class="node">缓存/数据库</div><span class="arrow">→</span><div class="node">Indexer 派生数据</div></div><div class="flow"><div class="node">用户签名</div><span class="arrow">→</span><div class="node">RPC 提交交易</div><span class="arrow">→</span><div class="node">Exchange 合约</div><span class="arrow">→</span><div class="node">事件日志</div><span class="arrow">→</span><div class="node">Indexer</div></div>
+<h3>6.2 服务拆分</h3><div class="grid"><div class="card"><h4>Market API</h4><p>合集、NFT、订单、活动、排名、历史成交和 Portfolio 查询。只返回派生数据，不直接决定资产所有权。</p></div><div class="card"><h4>Order Service</h4><p>校验签名格式、接受订单、订单过期、报价聚合和可成交检查。撮合前必须再次链上模拟。</p></div><div class="card"><h4>Indexer</h4><p>按 block number + tx hash + log index 幂等消费。保存原始事件和派生状态，支持重组回滚。</p></div><div class="card"><h4>Metadata Worker</h4><p>读取 tokenURI、解析 JSON、提取图片和属性、缓存 IPFS/HTTP 结果，失败重试且保留旧值。</p></div></div>
+<h3>6.3 为什么不能只靠数据库撮合</h3><p>数据库里的订单只是查询副本。用户可以在别的平台成交、撤销授权、转移 NFT 或消耗 WETH，因此每次成交都要以链上合约最终校验为准。链下撮合服务的职责是“找到候选订单和构造交易”，不是替代合约做资产裁决。</p>
+</section>
+<section id="data"><h2>7. 数据模型与存储设计</h2>
+<h3>7.1 核心表</h3><div class="table-wrap"><table><thead><tr><th>表</th><th>关键字段</th><th>用途</th></tr></thead><tbody><tr><td>collections</td><td>chain_id, address, name, symbol, creator, floor_price, volume</td><td>合集页、排名和统计</td></tr><tr><td>tokens</td><td>collection, token_id, owner, token_standard, metadata_uri, image_uri</td><td>NFT 详情、搜索、持有人</td></tr><tr><td>orders</td><td>order_hash, maker, side, sale_kind, payment_token, price, quantity, filled, status, expiry</td><td>订单簿和 Portfolio</td></tr><tr><td>order_events</td><td>order_hash, tx_hash, block_number, log_index, event_type, raw_payload</td><td>审计、重放和重组</td></tr><tr><td>sales</td><td>tx_hash, collection, token_id, seller, buyer, price, fees, block_time</td><td>成交历史和统计</td></tr><tr><td>activities</td><td>type, actor, counterparty, asset, tx_hash, block_number</td><td>活动流</td></tr><tr><td>sync_checkpoints</td><td>chain_id, contract, scanned_block, finalized_block</td><td>索引进度和恢复</td></tr></tbody></table></div>
+<h3>7.2 状态一致性规则</h3><ul><li>订单主键是 <code>chain_id + exchange + order_hash</code>，不要只用 order_hash。</li><li>事件唯一键是 <code>chain_id + tx_hash + log_index</code>。</li><li>原始事件先落库，再异步更新 orders、tokens、collections 等派生表。</li><li>链重组时按确认窗口回滚受影响区块，再重新扫描；不能直接删除一行数据了事。</li><li>缓存必须带 block number 或 version，避免旧数据覆盖新数据。</li></ul>
+</section>
+<section id="api"><h2>8. API、前端与交易交互</h2>
+<h3>8.1 API 分层</h3><div class="table-wrap"><table><thead><tr><th>类别</th><th>接口示例</th><th>说明</th></tr></thead><tbody><tr><td>Discovery</td><td>GET /collections、/collections/{address}/items</td><td>合集、NFT、地板价、排名和筛选</td></tr><tr><td>Order Query</td><td>GET /orders?collection=&side=&status=</td><td>订单分页、最低卖价、最高报价</td></tr><tr><td>Portfolio</td><td>GET /wallets/{address}/items、/listings、/bids</td><td>用户资产和订单聚合</td></tr><tr><td>Activity</td><td>GET /activities?collection=&tokenId=</td><td>成交、转移、挂单、取消</td></tr><tr><td>Execution</td><td>POST /orders/prepare、POST /orders/validate</td><td>构造 calldata、模拟、返回交易步骤</td></tr><tr><td>Admin</td><td>POST /admin/sync、/admin/contracts</td><td>导入合约、补扫、元数据刷新</td></tr></tbody></table></div>
+<h3>8.2 前端交易状态机</h3><pre>idle
+  → preparing (读取余额/授权/报价)
+  → awaiting_signature (等待钱包)
+  → submitted (拿到 tx hash)
+  → confirming (等待确认)
+  → indexed (索引服务已看到事件)
+  → success
+失败分支：rejected / reverted / stale_order / insufficient_funds / index_lag</pre>
+<h3>8.3 页面最小闭环</h3><div class="grid"><div class="card"><h4>市场页</h4><p>搜索合集、链筛选、地板价、24h 成交量、最高 Bid、趋势。</p></div><div class="card"><h4>合集页</h4><p>NFT 网格、List、Bid、属性筛选、订单簿、批量购买。</p></div><div class="card"><h4>NFT 详情页</h4><p>当前 owner、最低卖单、最高报价、成交历史、授权、Buy/Offer/List。</p></div><div class="card"><h4>Portfolio</h4><p>我的 NFT、我的挂单、我的报价、成交、待处理交易和取消入口。</p></div></div>
+</section>
+<section id="settlement"><h2>9. 撮合与结算：一笔交易如何安全完成</h2>
+<h3>9.1 买家吃卖单</h3><div class="flow"><div class="node">查询最低有效 List</div><span class="arrow">→</span><div class="node">检查 expiry / filled / owner / approval</div><span class="arrow">→</span><div class="node">构造 taker order</div><span class="arrow">→</span><div class="node">eth_call 模拟</div><span class="arrow">→</span><div class="node">提交 fulfill</div><span class="arrow">→</span><div class="node">确认 NFT + 资金事件</div></div>
+<h3>9.2 卖家接受 Bid</h3><p>卖家选择一个仍有效的 Bid，合约检查 collection、tokenId/criteria、价格、数量、买家资金和双方订单哈希，成功后将 NFT 给买家，将成交价扣除费用后给卖家。</p>
+<h3>9.3 原子结算顺序</h3><ol><li>验证订单域、签名、时间、nonce、数量和资产匹配。</li><li>验证订单未取消、未完全成交，且付款资产足够。</li><li>计算成交价、协议费、版税、卖家净额和退款。</li><li>更新订单成交量，防止重入和重复成交。</li><li>执行 NFT 转移和资金转移。</li><li>发出成交、费用和资产转移事件。</li></ol>
+<div class="danger note"><b>不要依赖前端计算：</b>价格、费用、剩余数量、版税和退款都必须在合约重新计算。前端报价只用于展示，不能作为结算可信源。</div>
+<h3>9.4 批量交易</h3><p>批量撮合需要明确两种语义：<b>原子批量</b>（任一失败全部回滚）和<b>部分成功</b>（返回每笔成功状态）。部分成功尤其要返回每个子调用的错误码、orderHash 和实际成交数量，否则用户会误以为全部成交。</p>
+</section>
+<section id="security"><h2>10. 安全、一致性与运维</h2>
+<div class="kpi"><div><b>0</b>重复成交</div><div><b>1</b>原子结算</div><div><b>≥N</b>确认区块</div><div><b>100%</b>资产可追溯</div></div>
+<h3>10.1 合约安全</h3><ul><li>使用重入保护、暂停开关、权限分离和升级多签。</li><li>签名域绑定 chainId、exchange、版本和 nonce，防止重放。</li><li>支持合约钱包的 EIP-1271 签名校验。</li><li>对 ERC-721/1155 的接收、数量、safeTransfer 和回调做兼容测试。</li><li>费用和提币权限单独审计，协议费率设置上限。</li><li>升级前检查 storage layout；生产实现合约锁定，代理管理员使用多签。</li></ul>
+<h3>10.2 链下安全</h3><ul><li>API 不能凭数据库状态声称“拥有 NFT”；owner 以链上查询或已确认索引为准。</li><li>所有写接口使用 nonce 登录、签名验证、限流、审计日志。</li><li>RPC 不稳定时自动切换、重试和告警，避免重复提交相同交易。</li><li>元数据 URL、图片上传和回调防 SSRF、恶意 SVG、越权覆盖和超大文件。</li><li>索引器保存 checkpoint、原始日志、重试次数和 dead-letter 任务。</li></ul>
+<h3>10.3 可观测性</h3><div class="table-wrap"><table><thead><tr><th>指标</th><th>告警条件</th></tr></thead><tbody><tr><td>Indexer lag</td><td>最新链头与已处理区块差距超过阈值</td></tr><tr><td>Order mismatch</td><td>数据库订单状态与链上 filled/cancel 状态不一致</td></tr><tr><td>Settlement revert</td><td>撮合回滚率异常升高、授权或余额错误集中出现</td></tr><tr><td>Vault balance</td><td>托管资产与订单剩余数量无法对账</td></tr><tr><td>API latency</td><td>订单、合集或 Portfolio P95 超过目标</td></tr></tbody></table></div>
+</section>
+<section id="roadmap"><h2>11. 推荐落地路线</h2>
+<details open><summary>MVP：单链、ERC-721、ETH/WETH、List + Item Bid</summary><div><ul><li>Exchange、Vault、EIP-712、创建/取消/成交。</li><li>Indexer、合集/NFT/订单/成交表。</li><li>市场页、详情页、Portfolio、钱包交易状态。</li><li>安全测试、事件幂等、基础监控和测试网验收。</li></ul></div></details>
+<details><summary>阶段 2：Collection Bid、批量交易、编辑和更好流动性</summary><div><ul><li>集合出价、批量撮合、订单聚合、报价比较。</li><li>允许部分成功并逐笔展示结果。</li><li>WETH 授权、gas 估算、交易模拟和失败恢复。</li></ul></div></details>
+<details><summary>阶段 3：多链、ERC-1155、第三方聚合</summary><div><ul><li>按 chainId 隔离配置、合约、索引 checkpoint 和费用。</li><li>增加数量型资产、批量转移和部分成交。</li><li>接入外部订单源，建立统一订单适配层。</li></ul></div></details>
+<details><summary>阶段 4：高级业务</summary><div><ul><li>Trait Bid、租赁、NFT 抵押、游戏资产、品牌会员。</li><li>AMM 或流动性池；必须与订单簿模型分开设计。</li><li>数据 API、项目方后台、发行和营销工具。</li></ul></div></details>
+</section>
+<section id="easy"><h2>12. EasySwap 当前实现对照</h2>
+<div class="table-wrap"><table><thead><tr><th>设计领域</th><th>EasySwap 已有能力</th><th>建议补强</th></tr></thead><tbody><tr><td>订单簿</td><td>红黑树价格档 + 同价队列；List/Bid；Item/Collection 类型</td><td>统一 order status、过期清理、订单适配层和更清晰错误码</td></tr><tr><td>资产托管</td><td>EasySwapVault 按 orderKey 托管 NFT/ETH</td><td>托管对账、紧急退出、WETH、资产余额证明</td></tr><tr><td>撮合</td><td>matchOrder、matchOrders、multicall，支持部分批量结果</td><td>完整版税/费用规则、模拟接口、失败逐笔展示</td></tr><tr><td>验证</td><td>EIP-712、filledAmount、取消标记、暂停、重入保护</td><td>nonce 体系、EIP-1271 全链路测试、升级多签</td></tr><tr><td>链下</td><td>Go Backend + EasySwapSync + MySQL/Redis</td><td>checkpoint、reorg 回滚、原始事件表、对账任务</td></tr><tr><td>前端</td><td>合集、NFT、活动、Portfolio、Mint 和钱包调用</td><td>统一交易状态、网络切换、订单过期和索引延迟提示</td></tr></tbody></table></div>
+<h3>最终建议</h3><p class="lead">如果要把 EasySwap 做成真正可用的交易市场，优先级不是继续堆页面，而是先把三条链路做成闭环：<b>订单正确性、资产原子结算、链上链下可恢复一致性</b>。</p><ol><li>先确定订单模型和费用/版税规则，写成不可歧义的状态机。</li><li>再确定托管型、签名型或混合型订单架构，不要中途改变资产语义。</li><li>所有合约事件和数据库状态都设计成可重放、可对账。</li><li>最后再扩展多链、聚合、AMM 和复杂金融化功能。</li></ol>
+<div class="note"><b>本文基于：</b>EasySwap 的 OrderBook、OrderStorage、OrderValidator、ProtocolManager、EasySwapVault、Go Backend、EasySwapSync 和 Next.js 前端结构整理。它是系统设计稿，不替代合约安全审计和生产参数评审。</div>
+</section>
+<div class="footer">NFTMarket_Exchange_Design.html · 本地阅读版 · 2026</div>
+</main></div></div>
+<script>document.querySelectorAll('.toc a').forEach(a=>a.addEventListener('click',()=>document.querySelectorAll('.toc a').forEach(x=>x.style.color='')));</script>
+</body></html>
