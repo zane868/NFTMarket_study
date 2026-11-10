@@ -21,9 +21,11 @@ if (!SEPOLIA_PK_ONE) {
 const MAINNET_PK = process.env.MAINNET_PK
 const MAINNET_ALCHEMY_AK = process.env.MAINNET_ALCHEMY_AK
 
+const SEPOLIA_RPC_URL = process.env.SEPOLIA_RPC_URL
 const SEPOLIA_ALCHEMY_AK = process.env.SEPOLIA_ALCHEMY_AK
-if (!SEPOLIA_ALCHEMY_AK) {
-  throw new Error("Please set your SEPOLIA_ALCHEMY_AK in a .env file")
+const sepoliaUrl = SEPOLIA_RPC_URL || (SEPOLIA_ALCHEMY_AK ? `https://eth-sepolia.g.alchemy.com/v2/${SEPOLIA_ALCHEMY_AK}` : null)
+if (!sepoliaUrl) {
+  throw new Error("Please set SEPOLIA_RPC_URL or SEPOLIA_ALCHEMY_AK in a .env file")
 }
 
 /** @type import('hardhat/config').HardhatUserConfig */
@@ -42,14 +44,18 @@ module.exports = {
     }
   },
   networks: {
-    mainnet: {
-      url: `https://eth-mainnet.g.alchemy.com/v2/${MAINNET_ALCHEMY_AK}`,
-      accounts: [`${MAINNET_PK}`],
-      saveDeployments: true,
-      chainId: 1,
-    },
+    ...(MAINNET_PK && MAINNET_ALCHEMY_AK
+      ? {
+          mainnet: {
+            url: `https://eth-mainnet.g.alchemy.com/v2/${MAINNET_ALCHEMY_AK}`,
+            accounts: [`${MAINNET_PK}`],
+            saveDeployments: true,
+            chainId: 1,
+          },
+        }
+      : {}),
     sepolia: {
-      url: `https://eth-sepolia.g.alchemy.com/v2/${SEPOLIA_ALCHEMY_AK}`,
+      url: sepoliaUrl,
       accounts: [`${SEPOLIA_PK_ONE}`, `${SEPOLIA_PK_TWO}`],
     },
     // optimism: {
