@@ -369,10 +369,14 @@ export function MainContent({myListOrders, onOrderChanged}: {myListOrders: any[]
 
   // 计算统计数据
   const totalListings = myListOrders.length;
-  const activeListingCount = myListOrders.filter((o) => o.isActive).length;
+  const activeListingCount = myListOrders.filter((o) => o.status === "active").length;
+  // 过期但 NFT 仍锁在 Vault 里，可以撤单取回
+  const cancellableCount = myListOrders.filter(
+    (o) => o.status === "expired" && o.canCancel
+  ).length;
   const totalValue = myListOrders.reduce((sum, order) => {
     try {
-      return sum + parseFloat(formatEther(order.price || '0'));
+      return sum + parseFloat(formatEther(order.priceWei || order.price || '0'));
     } catch {
       return sum;
     }
@@ -692,9 +696,16 @@ export function MainContent({myListOrders, onOrderChanged}: {myListOrders: any[]
               <h2 className="text-lg font-semibold text-white">挂单记录</h2>
               {myListOrders.length > 0 && (
                 <>
-                  <span className="px-2 py-1 bg-green-600/20 text-green-400 text-xs rounded-full">
-                    {activeListingCount} 个活跃
-                  </span>
+                  {activeListingCount > 0 && (
+                    <span className="px-2 py-1 bg-green-600/20 text-green-400 text-xs rounded-full">
+                      {activeListingCount} 个活跃
+                    </span>
+                  )}
+                  {cancellableCount > 0 && (
+                    <span className="px-2 py-1 bg-yellow-600/20 text-yellow-400 text-xs rounded-full">
+                      {cancellableCount} 个待取回
+                    </span>
+                  )}
                   <span className="px-2 py-1 bg-gray-600/20 text-gray-400 text-xs rounded-full">
                     共 {myListOrders.length} 条历史
                   </span>
@@ -772,12 +783,18 @@ export function MainContent({myListOrders, onOrderChanged}: {myListOrders: any[]
                       {viewMode === 'grid' && (
                         <span
                           className={`px-2 py-1 text-xs rounded-full whitespace-nowrap ${
-                            order.isActive
+                            order.status === 'active'
                               ? 'bg-green-600/20 text-green-400'
-                              : 'bg-gray-600/20 text-gray-400'
+                              : order.status === 'expired'
+                                ? 'bg-yellow-600/20 text-yellow-400'
+                                : 'bg-gray-600/20 text-gray-400'
                           }`}
                         >
-                          {order.isActive ? '活跃' : '已结束'}
+                          {order.status === 'active'
+                            ? '活跃'
+                            : order.status === 'expired'
+                              ? '已过期·待取回'
+                              : '已结束'}
                         </span>
                       )}
                     </div>
@@ -808,54 +825,62 @@ export function MainContent({myListOrders, onOrderChanged}: {myListOrders: any[]
                       {viewMode === 'list' && (
                         <span
                           className={`inline-flex px-2 py-1 text-xs rounded-full ${
-                            order.isActive
+                            order.status === 'active'
                               ? 'bg-green-600/20 text-green-400'
-                              : 'bg-gray-600/20 text-gray-400'
+                              : order.status === 'expired'
+                                ? 'bg-yellow-600/20 text-yellow-400'
+                                : 'bg-gray-600/20 text-gray-400'
                           }`}
                         >
-                          {order.isActive ? '活跃' : '已结束'}
+                          {order.status === 'active'
+                            ? '活跃'
+                            : order.status === 'expired'
+                              ? '已过期·待取回'
+                              : '已结束'}
                         </span>
                       )}
                     </div>
 
-                    {/* 操作按钮：只有仍活跃的挂单才能编辑/取消 */}
+                    {/* 操作按钮：只要 NFT 仍托管在 Vault，就允许撤单取回 */}
                     <div className={`${viewMode === 'grid' ? 'mt-4' : 'mt-2'} flex gap-2`}>
-                      {order.isActive ? (
+                      {order.canCancel ? (
                         <>
+                          {order.status === 'active' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setEditDialog({
+                                  open: true,
+                                  orderKey: order.orderKey || order.list_order_id || "",
+                                  collection: order.collectionAddress || order.collection_address,
+                                  tokenId: order.tokenId || order.token_id,
+                                  maker: order.maker,
+                                  oldPrice: order.priceWei || "0",
+                                  oldExpiry: 0,
+                                  oldSalt: 0,
+                                });
+                                setEditPrice((() => { try { return parseFloat(formatEther(order.priceWei || '0')).toString(); } catch { return ''; } })());
+                              }}
+                              className="flex-1 border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white"
+                            >
+                              <Edit3 className="h-3 w-3 mr-1" />
+                              编辑
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => {
-                              setEditDialog({
-                                open: true,
-                                orderKey: order.list_order_id || "",
-                                collection: order.collectionAddress || order.collection_address,
-                                tokenId: order.tokenId || order.token_id,
-                                maker: order.maker,
-                                oldPrice: order.priceWei || "0",
-                                oldExpiry: 0,
-                                oldSalt: 0,
-                              });
-                              setEditPrice((() => { try { return parseFloat(formatEther(order.priceWei || '0')).toString(); } catch { return ''; } })());
-                            }}
-                            className="flex-1 border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white"
-                          >
-                            <Edit3 className="h-3 w-3 mr-1" />
-                            编辑
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleCancelOrder(order.list_order_id)}
+                            onClick={() => handleCancelOrder(order.orderKey || order.list_order_id)}
                             className="flex-1 border-red-600/50 text-red-400 hover:bg-red-600/10 hover:border-red-500"
                           >
                             <X className="h-3 w-3 mr-1" />
-                            取消
+                            {order.status === 'expired' ? '撤单取回' : '取消'}
                           </Button>
                         </>
                       ) : (
                         <div className="flex-1 text-xs text-gray-500 self-center">
-                          该挂单已结束，不可操作
+                          该挂单已结束，资产已释放
                         </div>
                       )}
                       <Button

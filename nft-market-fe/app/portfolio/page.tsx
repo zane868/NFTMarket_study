@@ -6,17 +6,44 @@ import activityApi from "@/api/activity";
 import { request } from "@/api/request";
 import { useAccount } from "wagmi";
 import { useEffect, useState, useCallback } from "react";
+import { ethers } from "ethers";
+import { useEthersSigner } from "@/hooks/useEthersSigner";
+import { VAULT_CONTRACT_ADDRESS } from "@/contracts/service/orderBookContract";
+
+const NFT_BALANCE_ABI = [
+  "function NFTBalance(bytes32 orderKey) view returns (uint256)",
+];
+
+/**
+ * 读取链上 Vault 的 NFTBalance，判断某个订单的 NFT 是否仍被托管。
+ * 返回 tokenId（>0 表示仍在托管），0 表示已释放。
+ */
+async function readVaultNftBalance(
+  signer: ethers.Signer | undefined,
+  orderKey: string
+): Promise<number> {
+  if (!signer || !orderKey) return 0;
+  try {
+    const vault = new ethers.Contract(VAULT_CONTRACT_ADDRESS, NFT_BALANCE_ABI, signer);
+    const bal = await vault.NFTBalance(orderKey);
+    return Number(bal);
+  } catch (err) {
+    console.warn("读取 Vault.NFTBalance 失败", orderKey, err);
+    return 0;
+  }
+}
 
 export default function Home() {
 
   const { address: owner, chainId } = useAccount();
+  const signer = useEthersSigner();
   const [myListOrders, setMyListOrders] = useState<any[]>([]);
 
   const loadMyListOrders = useCallback(async () => {
     if (!owner || !chainId) return;
     try {
-      // 1) 历史：拉取该用户所有 list 事件（含已取消/已成交的挂单）
-      const filters = JSON.stringify({
+      // 1) 历史：该用户所有 list 事件（含已取消/已成交）
+      const historyResp: any = await activityApi.GetActivity({
         filter_ids: [chainId],
         collection_addresses: [],
         user_addresses: [owner],
@@ -24,10 +51,33 @@ export default function Home() {
         page: 1,
         page_size: 100,
       });
-      const resp: any = await activityApi.GetActivity(JSON.parse(filters));
-      const history: any[] = resp?.result || [];
+      const history: any[] = historyResp?.result || [];
 
-      // 2) 当前：从 portfolio/items 取得仍活跃的挂单，用于标注状态
+      // 2) 挂单：/portfolio/listings 带 orderKey，覆盖已过期但 NFT 仍在托管的订单
+      const listingByKey = new Map<string, any>();
+      try {
+        const listingsResp: any = await request.get("/portfolio/listings", {
+          params: {
+            filters: JSON.stringify({
+              chain_id: [chainId],
+              collection_addresses: [],
+              user_addresses: [owner],
+              page: 1,
+              page_size: 100,
+            }),
+          },
+        });
+        const listings = listingsResp?.result || listingsResp || [];
+        for (const l of listings) {
+          if (!l.list_order_id) continue;
+          const k = `${String(l.collection_address).toLowerCase()}-${l.token_id}`;
+          listingByKey.set(k, l);
+        }
+      } catch (err) {
+        console.error("加载挂单列表失败:", err);
+      }
+
+      // 3) 活跃挂单（用于区分「正常挂单中」）
       let activeKeys = new Set<string>();
       try {
         const itemsResp: any = await request.get("/portfolio/items", {
@@ -48,10 +98,10 @@ export default function Home() {
             .map((it: any) => `${String(it.collection_address).toLowerCase()}-${it.token_id}`)
         );
       } catch (err) {
-        console.error("加载活跃挂单失败，状态将全部标记为已结束:", err);
+        console.error("加载活跃挂单失败:", err);
       }
 
-      // 3) 按 NFT 汇总：同一 token 多次挂单只保留最新一次
+      // 4) 按 NFT 汇总，同一 token 只保留最新一条挂单事件
       const latestByToken = new Map<string, any>();
       for (const ev of history) {
         const key = `${String(ev.collection_address).toLowerCase()}-${ev.token_id}`;
@@ -60,21 +110,61 @@ export default function Home() {
           latestByToken.set(key, ev);
         }
       }
+      // listings 里有、但 history 里没有的，也要补进来
+      for (const [key, l] of listingByKey) {
+        if (!latestByToken.has(key)) {
+          latestByToken.set(key, {
+            collection_address: l.collection_address,
+            collection_name: l.collection_name,
+            collection_image_uri: l.image_uri,
+            token_id: l.token_id,
+            item_name: l.name,
+            image_uri: l.image_uri,
+            price: l.list_price,
+            event_time: l.list_time,
+            maker: l.list_maker,
+          });
+        }
+      }
 
-      const merged = Array.from(latestByToken.entries()).map(([key, ev]) => ({
-        ...ev,
-        tokenId: ev.token_id,
-        collectionAddress: ev.collection_address,
-        name: ev.item_name || `${ev.collection_name || "NFT"} #${ev.token_id}`,
-        image: ev.image_uri || ev.collection_image_uri || "",
-        priceWei: ev.price,
-        // 仍在 items 里出现说明当前仍然活跃
-        isActive: activeKeys.has(key),
-      }));
+      // 5) 逐条读取链上托管状态，决定能否撤单
+      const merged = await Promise.all(
+        Array.from(latestByToken.entries()).map(async ([key, ev]) => {
+          const listing = listingByKey.get(key);
+          const orderKey: string = listing?.list_order_id || "";
+          const vaultTokenId = await readVaultNftBalance(signer, orderKey);
 
-      // 活跃的排前面，其次按时间倒序
+          // 仍在 Vault 托管 = 可以撤单取回
+          const canCancel = vaultTokenId > 0;
+          // 活跃挂单 = 正常挂单中（未过期、未成交）
+          const isActive = activeKeys.has(key);
+
+          let status: "active" | "expired" | "ended";
+          if (canCancel && isActive) status = "active";
+          else if (canCancel) status = "expired";   // 过期/失效，但 NFT 仍锁在 Vault
+          else status = "ended";                    // 已取消或已成交，资产已释放
+
+          return {
+            ...ev,
+            tokenId: ev.token_id,
+            collectionAddress: ev.collection_address,
+            name: ev.item_name || `${ev.collection_name || "NFT"} #${ev.token_id}`,
+            image: ev.image_uri || ev.collection_image_uri || "",
+            priceWei: listing?.list_price || ev.price,
+            orderKey,
+            status,
+            isActive,
+            canCancel,
+            vaultTokenId,
+          };
+        })
+      );
+
+      // 可撤单的排最前，其次活跃，最后已结束；同类按时间倒序
+      const rank = (s: string) => (s === "expired" ? 0 : s === "active" ? 1 : 2);
       merged.sort((a, b) => {
-        if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+        const d = rank(a.status) - rank(b.status);
+        if (d !== 0) return d;
         return Number(b.event_time) - Number(a.event_time);
       });
 
@@ -82,7 +172,7 @@ export default function Home() {
     } catch (err) {
       console.error("加载挂单历史失败:", err);
     }
-  }, [owner, chainId]);
+  }, [owner, chainId, signer]);
 
   useEffect(() => { loadMyListOrders(); }, [loadMyListOrders]);
 

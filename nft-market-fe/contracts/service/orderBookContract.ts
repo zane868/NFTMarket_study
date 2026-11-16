@@ -34,7 +34,7 @@ export interface Order {
 // 合约地址（Sepolia）
 // 注意：OrderBook 与 Vault 不是同一个地址。
 const ORDERBOOK_CONTRACT_ADDRESS = "0xB6097Da347e172f08B09A8c9416d483592A92B5c";
-const VAULT_CONTRACT_ADDRESS = "0x3AD0D396b5CEEA8E941186f7Ede88Aa2f51099bc";
+export const VAULT_CONTRACT_ADDRESS = "0x3AD0D396b5CEEA8E941186f7Ede88Aa2f51099bc";
 
 function emitTxMessage(detail: TxMessageDetail) {
     if (typeof window === "undefined") return;
