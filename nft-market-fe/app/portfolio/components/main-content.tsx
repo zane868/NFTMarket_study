@@ -369,6 +369,7 @@ export function MainContent({myListOrders, onOrderChanged}: {myListOrders: any[]
 
   // 计算统计数据
   const totalListings = myListOrders.length;
+  const activeListingCount = myListOrders.filter((o) => o.isActive).length;
   const totalValue = myListOrders.reduce((sum, order) => {
     try {
       return sum + parseFloat(formatEther(order.price || '0'));
@@ -690,9 +691,14 @@ export function MainContent({myListOrders, onOrderChanged}: {myListOrders: any[]
             <div className="flex items-center space-x-4">
               <h2 className="text-lg font-semibold text-white">挂单记录</h2>
               {myListOrders.length > 0 && (
-                <span className="px-2 py-1 bg-purple-600/20 text-purple-400 text-xs rounded-full">
-                  {myListOrders.length} 个活跃订单
-                </span>
+                <>
+                  <span className="px-2 py-1 bg-green-600/20 text-green-400 text-xs rounded-full">
+                    {activeListingCount} 个活跃
+                  </span>
+                  <span className="px-2 py-1 bg-gray-600/20 text-gray-400 text-xs rounded-full">
+                    共 {myListOrders.length} 条历史
+                  </span>
+                </>
               )}
             </div>
             <div className="flex items-center space-x-2">
@@ -743,7 +749,7 @@ export function MainContent({myListOrders, onOrderChanged}: {myListOrders: any[]
                   {/* NFT 图片 */}
                   <div className={`${viewMode === 'grid' ? 'aspect-square mb-4' : 'w-16 h-16 flex-shrink-0'} rounded-lg overflow-hidden bg-gray-700`}>
                     <img
-                      src={order.image_uri || order.collection_image_uri}
+                      src={order.image || order.image_uri || order.collection_image_uri}
                       alt={order.name || 'NFT'} 
                       className="w-full h-full object-cover"
                       onError={(e) => {
@@ -764,8 +770,14 @@ export function MainContent({myListOrders, onOrderChanged}: {myListOrders: any[]
                         </p>
                       </div>
                       {viewMode === 'grid' && (
-                        <span className="px-2 py-1 bg-green-600/20 text-green-400 text-xs rounded-full">
-                          活跃
+                        <span
+                          className={`px-2 py-1 text-xs rounded-full whitespace-nowrap ${
+                            order.isActive
+                              ? 'bg-green-600/20 text-green-400'
+                              : 'bg-gray-600/20 text-gray-400'
+                          }`}
+                        >
+                          {order.isActive ? '活跃' : '已结束'}
                         </span>
                       )}
                     </div>
@@ -777,7 +789,7 @@ export function MainContent({myListOrders, onOrderChanged}: {myListOrders: any[]
                         <span className="font-semibold text-white">
                           {(() => {
                             try {
-                              return `${parseFloat(formatEther(order.list_price || '0')).toFixed(3)} ETH`;
+                              return `${parseFloat(formatEther(order.priceWei || order.list_price || '0')).toFixed(3)} ETH`;
                             } catch {
                               return '0.000 ETH';
                             }
@@ -789,53 +801,67 @@ export function MainContent({myListOrders, onOrderChanged}: {myListOrders: any[]
                         <span className="text-sm text-gray-400">创建时间</span>
                         <span className="text-sm text-gray-300 flex items-center">
                           <Clock className="h-3 w-3 mr-1" />
-                          {formatTimeAgo(order.list_time || Date.now())}
+                          {formatTimeAgo((Number(order.event_time) || Math.floor(Date.now() / 1000)) * 1000)}
                         </span>
                       </div>
 
                       {viewMode === 'list' && (
-                        <span className="inline-flex px-2 py-1 bg-green-600/20 text-green-400 text-xs rounded-full">
-                          活跃
+                        <span
+                          className={`inline-flex px-2 py-1 text-xs rounded-full ${
+                            order.isActive
+                              ? 'bg-green-600/20 text-green-400'
+                              : 'bg-gray-600/20 text-gray-400'
+                          }`}
+                        >
+                          {order.isActive ? '活跃' : '已结束'}
                         </span>
                       )}
                     </div>
 
-                    {/* 操作按钮 */}
+                    {/* 操作按钮：只有仍活跃的挂单才能编辑/取消 */}
                     <div className={`${viewMode === 'grid' ? 'mt-4' : 'mt-2'} flex gap-2`}>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setEditDialog({
-                            open: true,
-                            orderKey: order.list_order_id,
-                            collection: order.collection_address,
-                            tokenId: order.token_id,
-                            maker: order.owner || order.list_maker || order.maker,
-                            oldPrice: order.list_price || "0",
-                            oldExpiry: order.list_expire_time || 0,
-                            oldSalt: order.list_salt || 0,
-                          });
-                          setEditPrice((() => { try { return parseFloat(formatEther(order.list_price || '0')).toString(); } catch { return ''; } })());
-                        }}
-                        className="flex-1 border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white"
-                      >
-                        <Edit3 className="h-3 w-3 mr-1" />
-                        编辑
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleCancelOrder(order.list_order_id)}
-                        className="flex-1 border-red-600/50 text-red-400 hover:bg-red-600/10 hover:border-red-500"
-                      >
-                        <X className="h-3 w-3 mr-1" />
-                        取消
-                      </Button>
+                      {order.isActive ? (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEditDialog({
+                                open: true,
+                                orderKey: order.list_order_id || "",
+                                collection: order.collectionAddress || order.collection_address,
+                                tokenId: order.tokenId || order.token_id,
+                                maker: order.maker,
+                                oldPrice: order.priceWei || "0",
+                                oldExpiry: 0,
+                                oldSalt: 0,
+                              });
+                              setEditPrice((() => { try { return parseFloat(formatEther(order.priceWei || '0')).toString(); } catch { return ''; } })());
+                            }}
+                            className="flex-1 border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white"
+                          >
+                            <Edit3 className="h-3 w-3 mr-1" />
+                            编辑
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleCancelOrder(order.list_order_id)}
+                            className="flex-1 border-red-600/50 text-red-400 hover:bg-red-600/10 hover:border-red-500"
+                          >
+                            <X className="h-3 w-3 mr-1" />
+                            取消
+                          </Button>
+                        </>
+                      ) : (
+                        <div className="flex-1 text-xs text-gray-500 self-center">
+                          该挂单已结束，不可操作
+                        </div>
+                      )}
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => window.open(`https://sepolia.etherscan.io/address/${order.collection_address}`, '_blank')}
+                        onClick={() => window.open(`https://sepolia.etherscan.io/address/${order.collectionAddress || order.collection_address}`, '_blank')}
                         className="p-2 text-gray-400 hover:text-white"
                       >
                         <ExternalLink className="h-3 w-3" />
