@@ -1,10 +1,24 @@
 import type { NextConfig } from "next";
-import path from "path";
+
+// 部署在 /nft 子路径下（Nginx 反代 /nft -> 127.0.0.1:3000）
+// 本地 `next dev` 时 basePath 为空，且 API 通过 rewrites 代理到后端
+const isDev = process.env.NODE_ENV === "development";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  // 子路径部署：前端资源挂载在 /nft/ 下，API 仍走绝对路径 /api/v1（由 Nginx 反代到后端 8083）
-  basePath: "/nft",
+  // 生产环境挂载在 /nft 子路径（Nginx 反代 /nft -> 127.0.0.1:3000）；开发环境走根路径
+  basePath: isDev ? undefined : "/nft",
+
+  // 仅开发环境代理后端 API（生产由 Nginx 的 /api/v1/ 规则处理）
+  async rewrites() {
+    if (!isDev) return [];
+    return [
+      {
+        source: "/api/v1/:path*",
+        destination: "http://222.186.34.36:9989/api/v1/:path*",
+      },
+    ];
+  },
+
   images: {
     remotePatterns: [
       {
@@ -17,6 +31,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+
   typescript: {
     ignoreBuildErrors: true,
   },
