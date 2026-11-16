@@ -260,66 +260,202 @@ export async function makeOrders(
     }
 }
 
+// ---------------------------------------------------------------------------
+// 订单 key 计算（与 LibOrder.hash 保持一致，用于查询 filledAmount）
+// ---------------------------------------------------------------------------
+
 /**
- * 买家接受卖家挂单（通过 multicall 聚合调用）
- * 场景：买家直接按卖家要价购买 NFT。
+ * 把合约返回的只读结构体（ethers 的 Result）转成普通对象。
+ *
+ * ethers v6 的返回值是 frozen 的 Result/数组，直接传给写函数的参数位置时，
+ * populateTransaction 摊平 tuple 会尝试 `obj[0] = ...`，于是抛
+ * "Cannot assign to read only property '0' of object '[object Object]'"。
  */
-export async function buyNowWithMulticall(
+export function toPlainOrder(order: any): Order {
+    return {
+        side: Number(order.side) as Side,
+        saleKind: Number(order.saleKind) as SaleKind,
+        maker: order.maker,
+        nft: {
+            tokenId: order.nft.tokenId.toString(),
+            collection: order.nft.collection,
+            amount: Number(order.nft.amount),
+        },
+        price: BigInt(order.price.toString()),
+        expiry: Number(order.expiry),
+        salt: Number(order.salt),
+    };
+}
+
+const ASSET_TYPEHASH = ethers.id(
+    "Asset(uint256 tokenId,address collection,uint96 amount)"
+);
+const ORDER_TYPEHASH = ethers.id(
+    "Order(uint8 side,uint8 saleKind,address maker,Asset nft,uint128 price,uint64 expiry,uint64 salt)" +
+        "Asset(uint256 tokenId,address collection,uint96 amount)"
+);
+
+/**
+ * 复现合约里的 OrderKey = keccak256(abi.encodePacked(...))。
+ * 注意：这不是 EIP-712 类型化哈希，而是 LibOrder 的自定义打包哈希，
+ * 所以 side / saleKind 按 1 字节打包，price 16 字节，expiry / salt 各 8 字节。
+ */
+export function computeOrderKey(order: {
+    side: Side;
+    saleKind: SaleKind;
+    maker: string;
+    nft: { tokenId: string | number; collection: string; amount: number | bigint };
+    price: bigint | string | number;
+    expiry: number | bigint;
+    salt: number | bigint;
+}): string {
+    const assetHash = ethers.keccak256(
+        ethers.AbiCoder.defaultAbiCoder().encode(
+            ["bytes32", "uint256", "address", "uint96"],
+            [ASSET_TYPEHASH, order.nft.tokenId, order.nft.collection, order.nft.amount]
+        )
+    );
+
+    return ethers.solidityPackedKeccak256(
+        ["bytes32", "uint8", "uint8", "address", "bytes32", "uint128", "uint64", "uint64"],
+        [
+            ORDER_TYPEHASH,
+            order.side,
+            order.saleKind,
+            order.maker,
+            assetHash,
+            order.price,
+            order.expiry,
+            order.salt,
+        ]
+    );
+}
+
+/**
+ * 查找该 NFT 当前真正可成交的卖单。
+ *
+ * 为什么不直接用 getBestOrder：`OrderStorage.getBestOrder()` 只过滤方向、
+ * saleKind、tokenId 和过期时间，**不检查 filledAmount**。所以某个价格档的
+ * 最便宜订单一成交，getBestOrder 仍会返回它，此时 matchOrder 会因
+ * "HD: order closed" 而 revert。
+ *
+ * 这里改为：用 getOrders 取一批候选 → 计算 orderKey → 逐个查 filledAmount
+ * → 返回第一个「未成交且未过期且不是自己挂的」订单。
+ */
+export async function findMatchableListing(
+    signer: ethers.Signer,
+    collection: string,
+    tokenId: string | number,
+    count: number = 10
+) {
+    const contract = getOrderBookContract(signer);
+    const buyer = (await signer.getAddress()).toLowerCase();
+    const now = Math.floor(Date.now() / 1000);
+
+    const result = await contract.getOrders(
+        collection,
+        tokenId,
+        Side.List,
+        SaleKind.FixedPriceForItem,
+        count,
+        0,
+        ethers.ZeroHash
+    );
+    const candidates: any[] = Array.from(result[0] || []);
+
+    for (const order of candidates) {
+        // getOrders 返回定长数组，尾部是零值填充，用 maker 判空
+        if (!order?.maker || order.maker === ethers.ZeroAddress) continue;
+        if (order.maker.toLowerCase() === buyer) continue; // 不能买自己的挂单
+        if (BigInt(order.price) === BigInt(0)) continue;
+
+        const expiry = Number(order.expiry);
+        if (expiry !== 0 && expiry < now) continue;
+
+        const orderKey = computeOrderKey({
+            side: Number(order.side) as Side,
+            saleKind: Number(order.saleKind) as SaleKind,
+            maker: order.maker,
+            nft: {
+                tokenId: order.nft.tokenId,
+                collection: order.nft.collection,
+                amount: order.nft.amount,
+            },
+            price: order.price,
+            expiry,
+            salt: order.salt,
+        });
+
+        const filled = await contract.filledAmount(orderKey);
+        if (BigInt(filled) < BigInt(order.nft.amount)) {
+            // 必须转成普通对象：ethers 返回的 Result 是 frozen 的，
+            // 直接放进 matchOrder 参数会触发只读属性赋值错误。
+            return toPlainOrder(order);
+        }
+    }
+
+    return null;
+}
+
+/**
+ * 立即购买：买家按卖单价直接吃掉一张挂单。
+ *
+ * 合约侧走的是 `_matchOrder` 的第二个分支（msg.sender == buyOrder.maker），
+ * 买家需要临时构造一张 Bid 订单，但它不用事先挂到订单簿上——钱随本次
+ * 交易以 msg.value 带入，成交价取卖单价，多付部分会退回。
+ *
+ * 价格直接取卖单价，所以 buyPrice == fillPrice，不会触发差价退款。
+ */
+export async function buyNow(
     signer: ethers.Signer,
     params: {
         collection: string;
         tokenId: string | number;
         expirySeconds?: number;
     }
-) {
+): Promise<{ transactionHash: string; sellOrder: any; buyOrder: Order }> {
     const chainId = await resolveChainId(signer);
     try {
         const contract = getOrderBookContract(signer);
         const signerAddress = await signer.getAddress();
-        const expirySeconds = params.expirySeconds ?? 30 * 24 * 60 * 60; // 默认30天
+        const expirySeconds = params.expirySeconds ?? 30 * 24 * 60 * 60; // 默认 30 天
 
-        // 查询该 NFT 当前最佳卖单（List + FixedPriceForItem）
-        const sellOrder = await contract.getBestOrder(
+        const sellOrder = await findMatchableListing(
+            signer,
             params.collection,
-            params.tokenId,
-            Side.List,
-            SaleKind.FixedPriceForItem
+            params.tokenId
         );
-
-        if (!sellOrder || !sellOrder.maker || sellOrder.maker === ethers.ZeroAddress) {
-            throw new Error("当前没有可匹配的卖单");
+        if (!sellOrder) {
+            throw new Error("当前没有可购买的挂单（可能已成交、已取消或已过期）");
+        }
+        if (sellOrder.maker.toLowerCase() === signerAddress.toLowerCase()) {
+            throw new Error("不能购买自己的挂单");
         }
 
+        const price = BigInt(sellOrder.price.toString());
+
+        // 临时买单：不入簿，仅用于本次撮合，价格与卖单一致
         const buyOrder: Order = {
             side: Side.Bid,
-            saleKind: Number(sellOrder.saleKind),
+            saleKind: SaleKind.FixedPriceForItem,
             maker: signerAddress,
             nft: {
                 tokenId: sellOrder.nft.tokenId.toString(),
                 collection: sellOrder.nft.collection,
                 amount: Number(sellOrder.nft.amount),
             },
-            price: BigInt(sellOrder.price.toString()),
+            price,
             expiry: Math.floor(Date.now() / 1000) + expirySeconds,
             salt: Date.now(),
         };
 
-        // 当前前端 ABI 里未包含 multicall，单独声明接口调用
-        const multicallContract = new ethers.Contract(
-            contract.target,
-            [
-                "function multicall(bytes[] data, bool revertOnFail) payable returns (bool[] successes, bytes[] results)",
-            ],
-            signer
-        );
-
-        const matchOrderData = contract.interface.encodeFunctionData("matchOrder", [sellOrder, buyOrder]);
-        const tx = await multicallContract.multicall([matchOrderData], true, {
-            value: buyOrder.price,
+        const tx = await contract.matchOrder(sellOrder, buyOrder, {
+            value: price,
         });
+
         emitTxMessage({
             type: "pending",
-            title: "交易提交中",
+            title: "购买中",
             description: "购买交易已发送，等待链上确认...",
             txHash: tx.hash,
             chainId,
@@ -328,25 +464,37 @@ export async function buyNowWithMulticall(
         const receipt = await tx.wait();
         emitTxMessage({
             type: "success",
-            title: "交易成功",
-            description: "NFT 购买已完成",
+            title: "购买成功",
+            description: "NFT 已转入你的钱包，ETH 已转给卖家",
             txHash: receipt.hash,
             chainId,
         });
-        return {
-            transactionHash: receipt.hash,
-            sellOrder,
-            buyOrder,
-        };
+
+        return { transactionHash: receipt.hash, sellOrder, buyOrder };
     } catch (error: any) {
+        const message = normalizeBuyError(error);
         emitTxMessage({
             type: "error",
-            title: "交易失败",
-            description: error?.message || "未知错误",
+            title: "购买失败",
+            description: message,
             chainId,
         });
-        throw new Error(`直接购买失败: ${error.message}`);
+        throw new Error(`购买失败: ${message}`);
     }
+}
+
+/** 把合约 revert 信息翻译成用户能看懂的话 */
+function normalizeBuyError(error: any): string {
+    const raw = error?.shortMessage || error?.reason || error?.message || "未知错误";
+    if (raw.includes("user rejected")) return "用户取消了交易";
+    if (raw.includes("insufficient funds")) return "ETH 余额不足";
+    if (raw.includes("HD: order closed")) return "该挂单已被成交，请刷新后重试";
+    if (raw.includes("HD: value < fill price")) return "支付金额不足";
+    if (raw.includes("HD: same maker")) return "不能购买自己的挂单";
+    if (raw.includes("OVa: expired")) return "该挂单已过期";
+    if (raw.includes("OVa: canceled")) return "该挂单已取消";
+    if (raw.includes("HD: asset mismatch")) return "订单资产不匹配";
+    return raw;
 }
 
 

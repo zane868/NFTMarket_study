@@ -1,14 +1,14 @@
 "use client";
 
 import { formatUnits, parseEther } from "ethers";
-import { ExternalLink, Copy, Check, Gavel } from "lucide-react";
+import { ExternalLink, Copy, Check, Gavel, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatAddress, getNftExplorerUrl } from "@/lib/utils";
 import { useState } from "react";
 import { useAccount } from "wagmi";
 import { useEthersSigner } from "@/hooks/useEthersSigner";
-import { makeBid, matchBid } from "@/contracts/service/orderBookContract";
+import { buyNow, makeBid, matchBid } from "@/contracts/service/orderBookContract";
 
 const ETH_DECIMALS = 18;
 
@@ -29,6 +29,9 @@ export function ItemDetailView({ itemDetail, chainId = 11155111, onRefresh }: It
   const [matchLoading, setMatchLoading] = useState(false);
   const [matchError, setMatchError] = useState("");
   const [matchSuccess, setMatchSuccess] = useState("");
+  const [buyLoading, setBuyLoading] = useState(false);
+  const [buyError, setBuyError] = useState("");
+  const [buySuccess, setBuySuccess] = useState("");
 
   const { address, isConnected } = useAccount();
   const signer = useEthersSigner();
@@ -97,6 +100,31 @@ export function ItemDetailView({ itemDetail, chainId = 11155111, onRefresh }: It
     } finally { setMatchLoading(false); }
   };
 
+  /**
+   * 立即购买：按卖单价吃掉当前挂单。
+   * 卖单以链上为准重新查找，避免使用已成交/已取消的过期数据。
+   */
+  const handleBuy = async () => {
+    setBuyError("");
+    setBuySuccess("");
+    if (!isConnected || !address) { setBuyError("请先连接钱包"); return; }
+    if (!signer) { setBuyError("钱包未就绪，请稍后重试"); return; }
+
+    setBuyLoading(true);
+    try {
+      const result = await buyNow(signer, {
+        collection: itemDetail.collection_address,
+        tokenId: itemDetail.token_id,
+      });
+      setBuySuccess(`购买成功！交易哈希: ${result.transactionHash}`);
+      setTimeout(() => onRefresh?.(), 3000); // 等 sync 更新 DB 后刷新
+    } catch (err: any) {
+      setBuyError(err.message || "购买失败");
+    } finally {
+      setBuyLoading(false);
+    }
+  };
+
   const formatPrice = (price: string | number, decimals: number = ETH_DECIMALS): string => {
     if (!price || price === "0" || price === 0) return "-";
     try {
@@ -134,6 +162,15 @@ export function ItemDetailView({ itemDetail, chainId = 11155111, onRefresh }: It
 
   const hasListing = itemDetail.list_order_id && itemDetail.list_order_id !== "";
   const hasBid = itemDetail.bid_order_id && itemDetail.bid_order_id !== "";
+
+  // 是否连通钱包、当前钱包是否是这张 NFT 的链上 owner
+  const isWalletConnected = isConnected && !!address;
+  const isOwner =
+    isWalletConnected &&
+    !!itemDetail.owner_address &&
+    itemDetail.owner_address.toLowerCase() === address!.toLowerCase();
+  // 只能买别人的挂单
+  const canBuy = hasListing && isWalletConnected && !isOwner;
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -252,7 +289,7 @@ export function ItemDetailView({ itemDetail, chainId = 11155111, onRefresh }: It
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold text-green-500">当前挂单</span>
                   <span className="text-xs bg-green-500/20 text-green-500 px-2 py-0.5 rounded">
-                    可购买
+                    {isOwner ? "我的挂单" : "可购买"}
                   </span>
                 </div>
               </div>
@@ -294,6 +331,30 @@ export function ItemDetailView({ itemDetail, chainId = 11155111, onRefresh }: It
                   </div>
                 )}
               </div>
+
+              {/* 立即购买：买家按卖单价成交 */}
+              <div className="mt-3 pt-3 border-t border-green-500/20">
+                <Button
+                  onClick={handleBuy}
+                  disabled={buyLoading || !canBuy}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white"
+                >
+                  <ShoppingCart className="h-4 w-4 mr-2" />
+                  {buyLoading
+                    ? "购买中..."
+                    : `立即购买 ${formatPrice(itemDetail.list_price)}`}
+                </Button>
+                {!isWalletConnected && (
+                  <p className="text-xs text-muted-foreground mt-2">连接钱包后可直接购买</p>
+                )}
+                {isOwner && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    这是你自己的挂单，请到 Portfolio 页管理
+                  </p>
+                )}
+                {buyError && <p className="text-xs text-red-400 mt-2">{buyError}</p>}
+                {buySuccess && <p className="text-xs text-green-400 mt-2">{buySuccess}</p>}
+              </div>
             </div>
           )}
 
@@ -316,14 +377,17 @@ export function ItemDetailView({ itemDetail, chainId = 11155111, onRefresh }: It
                 />
                 <Button
                   onClick={handleBid}
-                  disabled={bidLoading || !hasListing}
+                  disabled={bidLoading || !isWalletConnected || isOwner}
                   className="bg-blue-600 hover:bg-blue-700 text-white shrink-0"
                 >
                   {bidLoading ? "出价中..." : "出价"}
                 </Button>
               </div>
-              {!hasListing && (
-                <p className="text-xs text-muted-foreground">该 NFT 当前没有挂单，无法出价。</p>
+              {!isWalletConnected && (
+                <p className="text-xs text-muted-foreground">连接钱包后可出价。</p>
+              )}
+              {isOwner && (
+                <p className="text-xs text-muted-foreground">这是你自己的 NFT，无需出价。</p>
               )}
               {bidError && <p className="text-xs text-red-400">{bidError}</p>}
               {bidSuccess && <p className="text-xs text-green-400">{bidSuccess}</p>}
@@ -391,13 +455,13 @@ export function ItemDetailView({ itemDetail, chainId = 11155111, onRefresh }: It
                   </div>
                 )}
 
-                {/* 卖家接受出价按钮：当前钱包是挂单者时显示 */}
-                {address && itemDetail.list_maker?.toLowerCase() === address.toLowerCase() && hasBid && (
+                {/* 卖家接受出价按钮：当前钱包是该 NFT 的链上 owner 时才显示 */}
+                {isOwner && hasBid && (
                   <div className="mt-3 pt-3 border-t border-blue-500/20">
                     <Button
                       onClick={handleMatch}
                       disabled={matchLoading}
-                      className="w-full bg-green-600 hover:bg-green-700 text-white"
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white"
                     >
                       {matchLoading ? "成交中..." : `✅ 接受出价 ${formatPrice(itemDetail.bid_price)}`}
                     </Button>
