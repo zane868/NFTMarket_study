@@ -1,0 +1,6 @@
+allowBuilds:
+  bufferutil: true
+  cos-js-sdk-v5: true
+  keccak: true
+  sharp: true
+  utf-8-validate: true

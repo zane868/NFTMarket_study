@@ -53,25 +53,10 @@ function getCollectionItemDetail(address: string, token_id: string, chain_id: st
     });
 };
 
-type GetHistorySalesParams = {
-    address: string;
-    chain_id: string | number;
-    duration: '24h' | '7d' | '30d';
-};
-function GetHistorySales(params: GetHistorySalesParams) {
-    return request.get(`/collections/${params.address}/history-sales`, {
-        params: {
-            chain_id: params.chain_id,
-            duration: params.duration,
-        },
-    });
-}
-
 // eslint-disable-next-line import/no-anonymous-default-export
 export default {
     GetCollections,
     GetCollectionDetail,
     GetCollectionItems,
-    getCollectionItemDetail,
-    GetHistorySales
+    getCollectionItemDetail
 };

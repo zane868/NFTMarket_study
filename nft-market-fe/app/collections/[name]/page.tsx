@@ -55,11 +55,10 @@ export default function Page() {
         page_size: 20,
       },
     });
-    // @ts-ignore
+    console.log(res, "=res");
     setCollectionItems(res?.result || []);
     setCollectionParams({
       ...collectionParams,
-      // @ts-ignore
       count: res?.count,
     });
   }
@@ -67,13 +66,7 @@ export default function Page() {
   return (
     <main className="min-h-screen bg-background text-foreground">
       <CollectionHeader />
-      <CollectionView
-        items={collectionItems}
-        chainId={state.chain_id}
-        collectionAddress={
-          state.collection?.address || state.collection_address
-        }
-      />
+      <CollectionView items={collectionItems} chainId={state.chain_id} />
     </main>
   );
 }

@@ -89,9 +89,7 @@ export async function uploadFileToCOS(
     console.log("临时凭证信息:", {
       tmpSecretId: tokenData.credentials.tmpSecretId,
       tmpSecretKey: tokenData.credentials.tmpSecretKey?.substring(0, 10) + "...",
-      sessionToken: tokenData.credentials.sessionToken
-        ? tokenData.credentials.sessionToken.substring(0, 20) + "..."
-        : "(none)",
+      sessionToken: tokenData.credentials.sessionToken?.substring(0, 20) + "...",
       startTime: tokenData.startTime,
       expiredTime: tokenData.expiredTime,
     });
@@ -109,21 +107,17 @@ export async function uploadFileToCOS(
     // 创建 COS 实例，使用临时凭证
     const cos = new COS({
       getAuthorization: (_options: any, callback: any) => {
-        const credentials: any = {
+        const credentials = {
           TmpSecretId: tokenData.credentials.tmpSecretId,
           TmpSecretKey: tokenData.credentials.tmpSecretKey,
+          SecurityToken: tokenData.credentials.sessionToken,
           StartTime: startTimeStamp,
           ExpiredTime: expiredTimeStamp,
         };
-        if (tokenData.credentials.sessionToken) {
-          credentials.SecurityToken = tokenData.credentials.sessionToken;
-        }
         console.log("传递给 COS SDK 的凭证:", {
           TmpSecretId: credentials.TmpSecretId,
           TmpSecretKey: credentials.TmpSecretKey?.substring(0, 10) + "...",
-          SecurityToken: credentials.SecurityToken
-            ? credentials.SecurityToken.substring(0, 20) + "..."
-            : "(none)",
+          SecurityToken: credentials.SecurityToken?.substring(0, 20) + "...",
           StartTime: credentials.StartTime,
           ExpiredTime: credentials.ExpiredTime,
         });
@@ -148,9 +142,6 @@ export async function uploadFileToCOS(
           Region: tokenData.region,
           Key: tokenData.key,
           Body: file,
-          Headers: {
-            "x-cos-acl": "public-read",
-          },
           onProgress: (progressData: any) => {
             const percent = Math.round(progressData.percent * 100);
             console.log(`上传进度: ${percent}%`);

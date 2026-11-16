@@ -4,9 +4,9 @@ import '@rainbow-me/rainbowkit/styles.css';
 import { WagmiProvider } from 'wagmi';
 import { RainbowKitProvider } from '@rainbow-me/rainbowkit';
 import { NavBar } from "@/components/nav-bar";
+import { TxMessageCenter } from "@/components/ui/tx-message-center";
 import { config } from '@/config/wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { TxMessageCenter } from "@/components/ui/tx-message-center";
 
 const client = new QueryClient();
 

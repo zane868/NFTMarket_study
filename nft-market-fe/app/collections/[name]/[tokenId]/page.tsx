@@ -85,7 +85,7 @@ export default function ItemDetailPage() {
   return (
     <main className="min-h-screen bg-background text-foreground">
       <CollectionHeader />
-      <ItemDetailView itemDetail={itemDetail} chainId={state.chain_id} />
+      <ItemDetailView itemDetail={itemDetail} chainId={state.chain_id} onRefresh={fetchItemDetail} />
     </main>
   );
 }

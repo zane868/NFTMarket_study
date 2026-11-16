@@ -1,22 +1,101 @@
 "use client";
 
-import { formatUnits } from "ethers";
-import { ExternalLink, Copy, Check } from "lucide-react";
+import { formatUnits, parseEther } from "ethers";
+import { ExternalLink, Copy, Check, Gavel } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { formatAddress, getNftExplorerUrl } from "@/lib/utils";
 import { useState } from "react";
+import { useAccount } from "wagmi";
+import { useEthersSigner } from "@/hooks/useEthersSigner";
+import { makeBid, matchBid } from "@/contracts/service/orderBookContract";
 
 const ETH_DECIMALS = 18;
 
 interface ItemDetailViewProps {
   itemDetail: any;
   chainId?: string | number;
+  onRefresh?: () => void;
 }
 
-export function ItemDetailView({ itemDetail, chainId = 11155111 }: ItemDetailViewProps) {
+export function ItemDetailView({ itemDetail, chainId = 11155111, onRefresh }: ItemDetailViewProps) {
   const [copied, setCopied] = useState<string | null>(null);
   const [imageError, setImageError] = useState(false);
   const [videoError, setVideoError] = useState(false);
+  const [bidAmount, setBidAmount] = useState("");
+  const [bidLoading, setBidLoading] = useState(false);
+  const [bidError, setBidError] = useState("");
+  const [bidSuccess, setBidSuccess] = useState("");
+  const [matchLoading, setMatchLoading] = useState(false);
+  const [matchError, setMatchError] = useState("");
+  const [matchSuccess, setMatchSuccess] = useState("");
+
+  const { address, isConnected } = useAccount();
+  const signer = useEthersSigner();
+
+  const handleBid = async () => {
+    setBidError("");
+    setBidSuccess("");
+    if (!isConnected || !address) {
+      setBidError("请先连接钱包");
+      return;
+    }
+    if (!signer) {
+      setBidError("钱包未就绪，请稍后重试");
+      return;
+    }
+    const amount = parseFloat(bidAmount);
+    if (!amount || amount <= 0) {
+      setBidError("请输入有效的出价金额");
+      return;
+    }
+
+    setBidLoading(true);
+    try {
+      const result = await makeBid(
+        signer,
+        itemDetail.collection_address,
+        itemDetail.token_id,
+        bidAmount.trim()
+      );
+      console.log("出价成功:", result);
+      setBidSuccess(`出价成功！交易哈希: ${result.transactionHash}`);
+      setBidAmount("");
+      setTimeout(() => onRefresh?.(), 3000); // 等 sync 更新 DB 后刷新
+    } catch (err: any) {
+      let msg = err.message || "出价失败";
+      if (msg.includes("user rejected")) msg = "用户取消了交易";
+      else if (msg.includes("insufficient funds")) msg = "ETH 余额不足";
+      setBidError(msg);
+    } finally {
+      setBidLoading(false);
+    }
+  };
+
+  const handleMatch = async () => {
+    setMatchError("");
+    setMatchSuccess("");
+    if (!isConnected || !address) { setMatchError("请先连接钱包"); return; }
+    if (!signer) { setMatchError("钱包未就绪"); return; }
+    if (!itemDetail?.list_order_id || !itemDetail?.bid_order_id) {
+      setMatchError("该 NFT 没有同时存在挂单和出价");
+      return;
+    }
+    setMatchLoading(true);
+    try {
+      const result = await matchBid(
+        signer,
+        { maker: itemDetail.list_maker, nft: { tokenId: itemDetail.token_id, collection: itemDetail.collection_address, amount: 1 }, price: itemDetail.list_price, expiry: itemDetail.list_expire_time, salt: itemDetail.list_salt },
+        { maker: itemDetail.bid_maker, nft: { tokenId: itemDetail.token_id, collection: itemDetail.collection_address, amount: 1 }, price: itemDetail.bid_price, expiry: itemDetail.bid_expire_time, salt: itemDetail.bid_salt }
+      );
+      setMatchSuccess(`成交成功！交易哈希: ${result.transactionHash}`);
+      setTimeout(() => onRefresh?.(), 3000); // 等 sync 更新 DB 后刷新
+    } catch (err: any) {
+      let msg = err.message || "成交失败";
+      if (msg.includes("user rejected")) msg = "用户取消了交易";
+      setMatchError(msg);
+    } finally { setMatchLoading(false); }
+  };
 
   const formatPrice = (price: string | number, decimals: number = ETH_DECIMALS): string => {
     if (!price || price === "0" || price === 0) return "-";
@@ -218,6 +297,39 @@ export function ItemDetailView({ itemDetail, chainId = 11155111 }: ItemDetailVie
             </div>
           )}
 
+          {/* 出价面板 */}
+          <div className="p-4 rounded-lg border border-blue-500/30 bg-blue-500/10">
+            <div className="flex items-center gap-2 mb-3">
+              <Gavel className="h-4 w-4 text-blue-400" />
+              <span className="text-sm font-semibold text-blue-400">对此 NFT 出价</span>
+            </div>
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  placeholder="出价金额 (ETH)"
+                  value={bidAmount}
+                  onChange={(e) => setBidAmount(e.target.value)}
+                  className="bg-background border-border"
+                />
+                <Button
+                  onClick={handleBid}
+                  disabled={bidLoading || !hasListing}
+                  className="bg-blue-600 hover:bg-blue-700 text-white shrink-0"
+                >
+                  {bidLoading ? "出价中..." : "出价"}
+                </Button>
+              </div>
+              {!hasListing && (
+                <p className="text-xs text-muted-foreground">该 NFT 当前没有挂单，无法出价。</p>
+              )}
+              {bidError && <p className="text-xs text-red-400">{bidError}</p>}
+              {bidSuccess && <p className="text-xs text-green-400">{bidSuccess}</p>}
+            </div>
+          </div>
+
           {/* 出价信息 */}
           {hasBid && (
             <div className="p-4 rounded-lg border border-blue-500/20 bg-blue-500/5">
@@ -276,6 +388,21 @@ export function ItemDetailView({ itemDetail, chainId = 11155111 }: ItemDetailVie
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">未完成数量</span>
                     <span className="text-sm">{itemDetail.bid_unfilled}</span>
+                  </div>
+                )}
+
+                {/* 卖家接受出价按钮：当前钱包是挂单者时显示 */}
+                {address && itemDetail.list_maker?.toLowerCase() === address.toLowerCase() && hasBid && (
+                  <div className="mt-3 pt-3 border-t border-blue-500/20">
+                    <Button
+                      onClick={handleMatch}
+                      disabled={matchLoading}
+                      className="w-full bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      {matchLoading ? "成交中..." : `✅ 接受出价 ${formatPrice(itemDetail.bid_price)}`}
+                    </Button>
+                    {matchError && <p className="text-xs text-red-400 mt-1">{matchError}</p>}
+                    {matchSuccess && <p className="text-xs text-green-400 mt-1">{matchSuccess}</p>}
                   </div>
                 )}
               </div>

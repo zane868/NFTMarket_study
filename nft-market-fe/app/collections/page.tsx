@@ -12,7 +12,7 @@ export default function Collections() {
     return (
         <CollectionsProvider>
             <div>
-                {/* <SubNav /> */}
+                <SubNav />
                 <Main />
             </div>
         </CollectionsProvider>

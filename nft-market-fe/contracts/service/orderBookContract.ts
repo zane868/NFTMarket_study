@@ -33,8 +33,8 @@ export interface Order {
 
 // 合约地址（Sepolia）
 // 注意：OrderBook 与 Vault 不是同一个地址。
-const ORDERBOOK_CONTRACT_ADDRESS = "0x5dF9A3b6785017187119C5d41885B4ccc0c63a04";
-const VAULT_CONTRACT_ADDRESS = "0x48Ab4A68075b8De0b2961cE447b1df872865A955";
+const ORDERBOOK_CONTRACT_ADDRESS = "0xB6097Da347e172f08B09A8c9416d483592A92B5c";
+const VAULT_CONTRACT_ADDRESS = "0x3AD0D396b5CEEA8E941186f7Ede88Aa2f51099bc";
 
 function emitTxMessage(detail: TxMessageDetail) {
     if (typeof window === "undefined") return;
@@ -346,6 +346,243 @@ export async function buyNowWithMulticall(
             chainId,
         });
         throw new Error(`直接购买失败: ${error.message}`);
+    }
+}
+
+
+/**
+ * 创建出价（Bid）订单：买家为某个 NFT 出价，ETH 会锁进 Vault。
+ * @param signer        ethers signer
+ * @param collection    NFT 合约地址
+ * @param tokenId       token ID
+ * @param priceEth      出价金额（ETH，十进制字符串）
+ * @param expirySeconds 过期时间（秒），默认 7 天
+ */
+export async function makeBid(
+    signer: ethers.Signer,
+    collection: string,
+    tokenId: string | number,
+    priceEth: string,
+    expirySeconds?: number
+) {
+    const chainId = await resolveChainId(signer);
+    const expiry = expirySeconds || Math.floor(Date.now() / 1000) + 7 * 24 * 3600;
+    const price = parseEther(priceEth);
+
+    const order: Order = {
+        side: Side.Bid,
+        saleKind: SaleKind.FixedPriceForItem,
+        maker: await signer.getAddress(),
+        nft: {
+            tokenId,
+            collection,
+            amount: 1,
+        },
+        price,
+        expiry,
+        salt: Date.now(),
+    };
+
+    try {
+        const result = await makeOrders(signer, [order], {
+            value: priceEth,
+            autoApprove: false,
+        });
+        return result;
+    } catch (error: any) {
+        emitTxMessage({
+            type: "error",
+            title: "出价失败",
+            description: error?.message || "未知错误",
+            chainId,
+        });
+        throw error;
+    }
+}
+
+/**
+ * 接受出价（matchOrder）：卖家用自己的挂单匹配买家的出价。
+ * NFT 从卖家转到买家，ETH 从买家转到卖家。
+ */
+export async function matchBid(
+    signer: ethers.Signer,
+    sellOrder: {
+        maker: string;
+        nft: { tokenId: string | number; collection: string; amount: number };
+        price: string;
+        expiry: number;
+        salt: number;
+    },
+    buyOrder: {
+        maker: string;
+        nft: { tokenId: string | number; collection: string; amount: number };
+        price: string;
+        expiry: number;
+        salt: number;
+    }
+) {
+    const chainId = await resolveChainId(signer);
+    try {
+        const contract = getOrderBookContract(signer);
+
+        const sell = {
+            side: Side.List,
+            saleKind: SaleKind.FixedPriceForItem,
+            maker: sellOrder.maker,
+            nft: {
+                tokenId: sellOrder.nft.tokenId,
+                collection: sellOrder.nft.collection,
+                amount: sellOrder.nft.amount,
+            },
+            price: sellOrder.price,
+            expiry: sellOrder.expiry,
+            salt: sellOrder.salt,
+        };
+
+        const buy = {
+            side: Side.Bid,
+            saleKind: SaleKind.FixedPriceForItem,
+            maker: buyOrder.maker,
+            nft: {
+                tokenId: buyOrder.nft.tokenId,
+                collection: buyOrder.nft.collection,
+                amount: buyOrder.nft.amount,
+            },
+            price: buyOrder.price,
+            expiry: buyOrder.expiry,
+            salt: buyOrder.salt,
+        };
+
+        const tx = await contract.matchOrder(sell, buy);
+        emitTxMessage({
+            type: "pending",
+            title: "接受出价中",
+            description: "成交交易已发送，等待链上确认...",
+            txHash: tx.hash,
+            chainId,
+        });
+
+        const receipt = await tx.wait();
+        emitTxMessage({
+            type: "success",
+            title: "成交成功",
+            description: "NFT 已转移给买家，ETH 已转给卖家",
+            txHash: receipt.hash,
+            chainId,
+        });
+
+        return {
+            transactionHash: receipt.hash,
+            status: receipt.status === 1 ? "confirmed" : "failed",
+        };
+    } catch (error: any) {
+        emitTxMessage({
+            type: "error",
+            title: "成交失败",
+            description: error?.message || "未知错误",
+            chainId,
+        });
+        throw error;
+    }
+}
+
+/**
+ * 取消挂单（cancelOrder）：释放 Vault 中锁定的 NFT/ETH。
+ * @param orderKey 订单哈希（bytes32）
+ */
+export async function cancelOrder(signer: ethers.Signer, orderKey: string) {
+    const chainId = await resolveChainId(signer);
+    try {
+        const contract = getOrderBookContract(signer);
+        const tx = await contract.cancelOrders([orderKey]);
+        emitTxMessage({
+            type: "pending",
+            title: "撤单中",
+            description: "撤单交易已发送，等待链上确认...",
+            txHash: tx.hash,
+            chainId,
+        });
+        const receipt = await tx.wait();
+        emitTxMessage({
+            type: "success",
+            title: "撤单成功",
+            description: "NFT 已退回钱包",
+            txHash: receipt.hash,
+            chainId,
+        });
+        return {
+            transactionHash: receipt.hash,
+            status: receipt.status === 1 ? "confirmed" : "failed",
+        };
+    } catch (error: any) {
+        emitTxMessage({
+            type: "error",
+            title: "撤单失败",
+            description: error?.message || "未知错误",
+            chainId,
+        });
+        throw error;
+    }
+}
+
+/**
+ * 编辑挂单（editOrder）：取消旧订单 + 创建新订单，一步完成。
+ */
+export async function editOrder(
+    signer: ethers.Signer,
+    oldOrderKey: string,
+    newPriceEth: string,
+    collection: string,
+    tokenId: string | number,
+    maker: string,
+    oldExpiry: number,
+    oldSalt: number,
+) {
+    const chainId = await resolveChainId(signer);
+    try {
+        const contract = getOrderBookContract(signer);
+        const price = parseEther(newPriceEth);
+        const expiry = Math.floor(Date.now() / 1000) + 7 * 24 * 3600;
+
+        const newOrder = {
+            side: Side.List,
+            saleKind: SaleKind.FixedPriceForItem,
+            maker,
+            nft: { tokenId, collection, amount: 1 },
+            price,
+            expiry,
+            salt: Date.now(),
+        };
+
+        const detail = { oldOrderKey, newOrder };
+        const tx = await contract.editOrders([detail]);
+        emitTxMessage({
+            type: "pending",
+            title: "修改价格中",
+            description: "改价交易已发送，等待链上确认...",
+            txHash: tx.hash,
+            chainId,
+        });
+        const receipt = await tx.wait();
+        emitTxMessage({
+            type: "success",
+            title: "改价成功",
+            description: "挂单价格已更新",
+            txHash: receipt.hash,
+            chainId,
+        });
+        return {
+            transactionHash: receipt.hash,
+            status: receipt.status === 1 ? "confirmed" : "failed",
+        };
+    } catch (error: any) {
+        emitTxMessage({
+            type: "error",
+            title: "改价失败",
+            description: error?.message || "未知错误",
+            chainId,
+        });
+        throw error;
     }
 }
 

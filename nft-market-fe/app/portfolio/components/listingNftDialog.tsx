@@ -110,6 +110,7 @@ export function ListingNftDialog({
       
       console.log('挂单成功:', result);
       setListingStatus('挂单成功！');
+      alert(`挂单成功！交易哈希: ${result.transactionHash}`);
       
       // 重置状态
       setSelectedNfts(new Set());
@@ -129,7 +130,7 @@ export function ListingNftDialog({
         errorMessage = 'gas费不足，请确保钱包有足够的ETH';
       }
       
-      console.error(`挂单失败: ${errorMessage}`);
+      alert(`挂单失败: ${errorMessage}`);
     } finally {
       setIsListing(false);
       setListingStatus('');

@@ -2,6 +2,7 @@
 import { useContext } from "react";
 import { CollectionsContext } from "../hooks/context";
 import Collections from "./collections";
+import Trending from "./trending";
 export default function Main() {
 
     const { activeTab } = useContext(CollectionsContext)

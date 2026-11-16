@@ -266,29 +266,30 @@ export default function TradingDashboard() {
                 {transactionData.map((item, index) => (
                   <tr key={index} className="border-t border-gray-800">
                     <td className="p-4">
-                      {item.type === "sell" ? "销售" : "挂单"}
+                      {item.event_type === "sale" || item.event_type === "buy" ? "销售" : item.event_type === "list" ? "挂单" : item.event_type === "item_bid" ? "出价" : item.event_type === "offer" ? "出价" : (item.event_type || "交易")}
                     </td>
                     <td className="p-4">
                       <div className="flex items-center gap-2">
                         <img
-                          src={item.image_url || getRandomNftImage()}
+                          src={item.image_uri || getRandomNftImage()}
                           alt=""
                           className="w-8 h-8 rounded-lg"
+                          onError={(e) => { e.currentTarget.src = getRandomNftImage(); }}
                         />
                         <div>
                           <div>{item.collection_name}</div>
                           <div className="text-sm text-gray-500">
-                            {item.item_name}
+                            {item.item_name || `#${item.token_id}`}
                           </div>
                         </div>
                       </div>
                     </td>
-                    <td className={`p-4 ${item.rarity?.color}`}>{item.rarity?.name}</td>
+                    <td className={`p-4 ${item.rarity?.color || 'text-gray-400'}`}>{item.rarity?.name || '-'}</td>
                     <td className="p-4 text-right">{weiToEth(item.price)}</td>
                     <td className="p-4 text-center">
                       {item.highestBid ? weiToEth(item.highestBid) : '-'}</td>
-                    <td className="p-4">{item.from || '-'}</td>
-                    <td className="p-4">{item.to || '-'}</td>
+                    <td className="p-4">{addressShort(item.maker)}</td>
+                    <td className="p-4">{addressShort(item.taker)}</td>
                     <td className="p-4 text-right">
                       {formatTime(item.event_time)}
                     </td>
@@ -362,8 +363,16 @@ function getRandomNftImage(): string {
 
 function weiToEth(wei: string | number): string {
   const value = typeof wei === "string" ? wei : wei.toString();
-  const ethValue = Number(value) / 1e16;
-  return ethValue.toFixed(2) + "ETH";
+  const ethValue = Number(value) / 1e18;
+  // 保留足够精度：≥1 显示两位小数，<1 显示到 6 位小数，避免 0.001 显示成 0.00
+  const decimals = ethValue >= 1 ? 2 : 6;
+  return ethValue.toFixed(decimals) + " ETH";
+}
+
+function addressShort(addr: string): string {
+  if (!addr) return "-";
+  if (addr === "0x0000000000000000000000000000000000000000") return "-";
+  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
 
 function formatTime(seconds: number): string {
