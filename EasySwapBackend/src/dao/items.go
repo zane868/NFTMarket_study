@@ -612,7 +612,7 @@ func (d *Dao) QueryMultiChainUserItemsExpireListInfo(ctx context.Context, userAd
 		sqlMid := "("
 		sqlMid += "select ci.id as id, ci.chain_id as chain_id, 0 as rarity_rank,"
 		sqlMid += "ci.collection_address as collection_address,ci.token_id as token_id, ci.name as name, ci.owner as owner,"
-		sqlMid += "ci.is_opensea_banned as is_opensea_banned,co.order_status as order_status,"
+		sqlMid += "ci.is_opensea_banned as is_opensea_banned,min(co.order_status) as order_status,"
 		sqlMid += "min(co.price) as list_price, SUBSTRING_INDEX(GROUP_CONCAT(co.marketplace_id ORDER BY co.price,co.marketplace_id),',', 1) AS market_id, min(co.price) != 0 as listing "
 		sqlMid += fmt.Sprintf("from %s as ci ", multi.ItemTableName(info.ChainName))
 		sqlMid += fmt.Sprintf("join %s co ", multi.OrderTableName(info.ChainName))

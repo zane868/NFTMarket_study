@@ -62,7 +62,8 @@ func loadV1(r *gin.Engine, svcCtx *svc.ServerCtx) {
 	// 腾讯云COS文件上传相关接口
 	upload := apiV1.Group("/upload")
 	{
-		upload.POST("/cos-token", v1.GetCOSTokenHandler(svcCtx))                                                   // 获取COS临时访问凭证（免登录）
+		upload.POST("/file", v1.UploadFileHandler(svcCtx))                                         // 服务端代理上传文件（免登录）
+		upload.POST("/cos-token", v1.GetCOSTokenHandler(svcCtx))                                  // 获取COS临时访问凭证（免登录）
 		upload.GET("/cos-policy", middleware.AuthMiddleWare(svcCtx.KvStore), v1.GetCOSUploadPolicyHandler(svcCtx)) // 获取COS上传策略（需要认证）
 		upload.POST("/cos-callback", middleware.AuthMiddleWare(svcCtx.KvStore), v1.COSCallbackHandler(svcCtx))     // COS上传回调（需要认证）
 	}

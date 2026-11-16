@@ -1,16 +1,20 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/tencentyun/cos-go-sdk-v5"
 	"go.uber.org/zap"
 
 	"github.com/ProjectsTask/EasySwapBackend/src/service/svc"
@@ -232,4 +236,68 @@ func getMaxFileSize(fileType string) int64 {
 		return limit
 	}
 	return 10 * 1024 * 1024 // 默认10MB
+}
+
+// newCOSClient 构建 COS 客户端（主密钥签名，服务端直传）
+func newCOSClient(svcCtx *svc.ServerCtx) (*cos.Client, error) {
+	cfg := getCOSConfig(svcCtx)
+	if cfg.SecretID == "" || cfg.SecretKey == "" || strings.Contains(cfg.SecretID, "YOUR_") {
+		return nil, errors.New("invalid cos secret_id/secret_key config")
+	}
+	if cfg.Bucket == "" || cfg.Region == "" {
+		return nil, errors.New("invalid cos bucket/region config")
+	}
+
+	bucketURL, err := url.Parse(fmt.Sprintf("https://%s.cos.%s.myqcloud.com", cfg.Bucket, cfg.Region))
+	if err != nil {
+		return nil, errors.Wrap(err, "invalid cos bucket url")
+	}
+
+	client := cos.NewClient(&cos.BaseURL{BucketURL: bucketURL}, &http.Client{
+		Timeout: 60 * time.Second,
+		Transport: &cos.AuthorizationTransport{
+			SecretID:  cfg.SecretID,
+			SecretKey: cfg.SecretKey,
+		},
+	})
+	return client, nil
+}
+
+// UploadFileToCOS 服务端代理上传：主密钥签名，直接上传到 COS，返回公开访问 URL。
+func UploadFileToCOS(ctx context.Context, svcCtx *svc.ServerCtx, userAddr, fileType, fileName string, data []byte, contentType string) (string, error) {
+	// 验证文件类型（通过文件名后缀）
+	if !isValidFileType(fileType, fileName) {
+		return "", errors.New("invalid file type")
+	}
+	if len(data) == 0 {
+		return "", errors.New("empty file content")
+	}
+
+	fileKey := generateFileKey(userAddr, fileType, fileName)
+
+	client, err := newCOSClient(svcCtx)
+	if err != nil {
+		return "", err
+	}
+
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	opt := &cos.ObjectPutOptions{
+		ObjectPutHeaderOptions: &cos.ObjectPutHeaderOptions{
+			ContentType: contentType,
+		},
+	}
+
+	_, err = client.Object.Put(ctx, fileKey, bytes.NewReader(data), opt)
+	if err != nil {
+		xzap.WithContext(ctx).Error("cos upload failed", zap.Error(err), zap.String("key", fileKey))
+		return "", errors.Wrap(err, "cos upload failed")
+	}
+
+	// 构造公开访问 URL
+	publicURL := fmt.Sprintf("https://%s.cos.%s.myqcloud.com/%s", getCOSConfig(svcCtx).Bucket, getCOSConfig(svcCtx).Region, fileKey)
+
+	return publicURL, nil
 }

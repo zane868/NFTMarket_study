@@ -14,6 +14,62 @@ import (
 	"github.com/ProjectsTask/EasySwapBackend/src/types/v1"
 )
 
+// UploadFileHandler 服务端代理上传文件到 COS（免登录），返回公开访问 URL。
+// @Summary Upload file to COS
+// @Tags Upload
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "文件"
+// @Param file_type formData string true "file type: image/video/audio/document"
+// @Success 200 {object} map[string]interface{}
+// @Router /upload/file [post]
+func UploadFileHandler(svcCtx *svc.ServerCtx) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		fileType := c.PostForm("file_type")
+		if fileType == "" {
+			xhttp.Error(c, errcode.NewCustomErr("file_type is required"))
+			return
+		}
+
+		file, err := c.FormFile("file")
+		if err != nil {
+			xzap.WithContext(c).Error("failed to read uploaded file", zap.Error(err))
+			xhttp.Error(c, errcode.NewCustomErr("Failed to read uploaded file"))
+			return
+		}
+
+		src, err := file.Open()
+		if err != nil {
+			xhttp.Error(c, errcode.NewCustomErr("Failed to open uploaded file"))
+			return
+		}
+		defer src.Close()
+
+		buf := make([]byte, file.Size)
+		if _, err := src.Read(buf); err != nil {
+			xhttp.Error(c, errcode.NewCustomErr("Failed to read file content"))
+			return
+		}
+
+		userAddr := "anonymous"
+		if clientIP := c.ClientIP(); clientIP != "" {
+			userAddr = "guest_" + clientIP
+		}
+
+		contentType := file.Header.Get("Content-Type")
+		publicURL, err := service.UploadFileToCOS(c.Request.Context(), svcCtx, userAddr, fileType, file.Filename, buf, contentType)
+		if err != nil {
+			xzap.WithContext(c).Error("failed to upload file to COS", zap.Error(err))
+			xhttp.Error(c, errcode.NewCustomErr("Failed to upload file: "+err.Error()))
+			return
+		}
+
+		xhttp.OkJson(c, struct {
+			Result string `json:"result"`
+		}{Result: publicURL})
+	}
+}
+
 // GetCOSTokenHandler 获取腾讯云COS临时访问凭证（免登录版本）
 // @Summary Get COS temporary token
 // @Tags Upload

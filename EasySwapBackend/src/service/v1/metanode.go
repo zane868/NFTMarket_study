@@ -489,6 +489,13 @@ func MintMetaNodeNFT(ctx context.Context, svcCtx *svc.ServerCtx, req *typesv1.Me
 				zap.String("owner", req.ToAddress),
 			)
 		}
+
+		// 写入图片信息（用于 portfolio 展示）
+		if req.Image != "" {
+			if err := insertMintedItemImageToDB(ctx, svcCtx, req.ChainID, config.ContractAddress, tokenID, req.TokenURI, req.Image); err != nil {
+				xzap.WithContext(ctx).Error("failed to insert minted item image", zap.Error(err))
+			}
+		}
 	}
 
 	return &typesv1.MetaNodeMintResult{
@@ -794,7 +801,9 @@ func insertMintedItemToDB(ctx context.Context, svcCtx *svc.ServerCtx, chainID in
 		"collection_address": collectionAddress,
 		"token_id":           tokenID,
 		"owner":              owner,
+		"creator":            owner, // 服务端代付 gas，但 NFT 归属接收人
 		"name":               name,
+		"supply":             1,     // ERC721 supply 恒为 1
 		"is_opensea_banned":  false, // 默认设置为false
 		"create_time":        time.Now().Unix(),
 		"update_time":        time.Now().Unix(),
@@ -804,6 +813,30 @@ func insertMintedItemToDB(ctx context.Context, svcCtx *svc.ServerCtx, chainID in
 	tableName := multi.ItemTableName(chainName)
 	if err := svcCtx.Dao.DB.WithContext(ctx).Table(tableName).Create(&item).Error; err != nil {
 		return errors.Wrap(err, "failed to insert minted item to database")
+	}
+
+	return nil
+}
+
+// insertMintedItemImageToDB 将铸造 NFT 的图片/元数据信息写入 ob_item_external 表，用于 portfolio 展示
+func insertMintedItemImageToDB(ctx context.Context, svcCtx *svc.ServerCtx, chainID int, collectionAddress, tokenID, tokenURI, imageURL string) error {
+	chainName := getChainName(chainID)
+
+	itemExternal := map[string]interface{}{
+		"collection_address": collectionAddress,
+		"token_id":           tokenID,
+		"is_uploaded_oss":    true,     // 图片已上传到 COS，直接当 oss_uri 使用
+		"upload_status":      multi.OK, // 0 = OK
+		"meta_data_uri":      tokenURI,
+		"image_uri":          imageURL,
+		"oss_uri":            imageURL,
+		"create_time":        time.Now().Unix(),
+		"update_time":        time.Now().Unix(),
+	}
+
+	tableName := multi.ItemExternalTableName(chainName)
+	if err := svcCtx.Dao.DB.WithContext(ctx).Table(tableName).Create(&itemExternal).Error; err != nil {
+		return errors.Wrap(err, "failed to insert minted item image to database")
 	}
 
 	return nil

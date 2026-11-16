@@ -7,6 +7,7 @@ type MetaNodeMintRequest struct {
 	TokenURI    string `json:"token_uri" binding:"required"`  // NFT元数据URI
 	Name        string `json:"name"`                          // NFT名称（可选，用于记录）
 	Description string `json:"description"`                   // NFT描述（可选，用于记录）
+	Image       string `json:"image"`                         // NFT图片URL（可选，用于记录）
 }
 
 // MetaNodeMintResult MetaNodeNFT铸造结果
