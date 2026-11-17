@@ -11,29 +11,31 @@ import { Input } from "@/components/ui/input";
 import { X } from "lucide-react";
 import { SaleKind, Side, makeOrders } from "@/contracts/service/orderBookContract";
 import { useAccount } from 'wagmi'
-import { parseEther, formatEther } from "ethers";
+import { parseEther } from "ethers";
 import { useEthersSigner } from "@/hooks/useEthersSigner";
-import { useGlobalState } from "@/hooks/useGlobalState";
 
 interface PlaceBidDialogProps {
   open: boolean;
   close: () => void;
   collectionAddress: string;
+  /** 下单成功后回调，用于刷新合集买单列表 */
+  onPlaced?: () => void;
 }
 
 export function PlaceBidDialog({
   open,
   close,
   collectionAddress,
+  onPlaced,
 }: PlaceBidDialogProps) {
   const { address: owner } = useAccount();
   const signer = useEthersSigner();
-  const { state } = useGlobalState();
   const [price, setPrice] = useState<string>("");
   const [amount, setAmount] = useState<string>("1");
   const [expiryDays, setExpiryDays] = useState<string>("30");
   const [isPlacing, setIsPlacing] = useState(false);
   const [placingStatus, setPlacingStatus] = useState<string>("");
+  const [errorMessage, setErrorMessage] = useState<string>("");
 
   // 计算总金额
   const totalAmount = (() => {
@@ -50,8 +52,9 @@ export function PlaceBidDialog({
   })();
 
   const handlePlaceBid = async () => {
+    setErrorMessage("");
     if (!signer || !owner) {
-      alert("请先连接钱包");
+      setErrorMessage("请先连接钱包");
       return;
     }
 
@@ -61,17 +64,17 @@ export function PlaceBidDialog({
     const expiryDaysNum = parseFloat(expiryDays);
 
     if (isNaN(priceNum) || priceNum <= 0) {
-      alert("请输入有效的价格");
+      setErrorMessage("请输入有效的价格");
       return;
     }
 
     if (isNaN(amountNum) || amountNum <= 0 || !Number.isInteger(amountNum)) {
-      alert("请输入有效的数量（必须是整数）");
+      setErrorMessage("请输入有效的数量（必须是整数）");
       return;
     }
 
     if (isNaN(expiryDaysNum) || expiryDaysNum <= 0) {
-      alert("请输入有效的过期天数");
+      setErrorMessage("请输入有效的过期天数");
       return;
     }
 
@@ -117,21 +120,23 @@ export function PlaceBidDialog({
       setAmount("1");
       setExpiryDays("30");
       close();
+      onPlaced?.();
     } catch (error: any) {
       console.error("挂买单失败:", error);
-      let errorMessage = error.message;
+      const raw = error?.message || "未知错误";
+      let msg = raw;
 
       // 根据错误类型提供更友好的提示
-      if (errorMessage.includes("missing revert data")) {
-        errorMessage =
+      if (raw.includes("missing revert data")) {
+        msg =
           "交易可能会失败，请检查：\n1. 价格和数量是否有效\n2. 网络是否正确\n3. 钱包余额是否足够支付ETH和gas费\n4. 集合地址是否正确";
-      } else if (errorMessage.includes("user rejected")) {
-        errorMessage = "用户取消了交易";
-      } else if (errorMessage.includes("insufficient funds")) {
-        errorMessage = "余额不足，请确保钱包有足够的ETH支付买单金额和gas费";
+      } else if (raw.includes("user rejected")) {
+        msg = "用户取消了交易";
+      } else if (raw.includes("insufficient funds")) {
+        msg = "余额不足，请确保钱包有足够的ETH支付买单金额和gas费";
       }
 
-      console.error(`挂买单失败: ${errorMessage}`);
+      setErrorMessage(msg);
     } finally {
       setIsPlacing(false);
       setPlacingStatus("");
@@ -263,6 +268,10 @@ export function PlaceBidDialog({
                     这些ETH将被锁定在合约中，直到订单被匹配或取消
                   </p>
                 </div>
+
+                {errorMessage && (
+                  <p className="text-xs text-red-400 whitespace-pre-line">{errorMessage}</p>
+                )}
               </div>
 
               {/* Footer */}

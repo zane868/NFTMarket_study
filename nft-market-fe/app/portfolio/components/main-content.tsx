@@ -940,8 +940,18 @@ export function MainContent({myListOrders, onOrderChanged}: {myListOrders: any[]
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
                         <div>
-                          <h3 className="font-semibold text-white">{bid.collection_name || "NFT"} #{bid.token_id}</h3>
+                          <h3 className="font-semibold text-white">
+                            {String(bid.token_id) === "0"
+                              ? `${bid.collection_name || "合集"} · 合集出价`
+                              : `${bid.collection_name || "NFT"} #${bid.token_id}`}
+                          </h3>
                           <p className="text-sm text-gray-400">{bid.collection_address?.slice(0,6)}...{bid.collection_address?.slice(-4)}</p>
+                          {bid.bid_size && (
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              数量 {bid.bid_unfilled ?? bid.bid_size}
+                              {bid.bid_size !== 1 && String(bid.token_id) === "0" ? " 件（合集任意 NFT）" : ""}
+                            </p>
+                          )}
                         </div>
                         <div className="text-right">
                           <div className="text-lg font-bold text-blue-400">

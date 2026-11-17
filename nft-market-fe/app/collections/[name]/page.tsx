@@ -5,9 +5,13 @@ import { CollectionHeader } from "./components/collection-header";
 import collectionApi from "@/api/collections";
 import { useEffect, useState } from "react";
 import { useGlobalState } from "@/hooks/useGlobalState";
+import { useParams } from "next/navigation";
 
 export default function Page() {
   const { state, setState } = useGlobalState();
+  const params = useParams();
+  // 直接通过 URL 进入时 state.collection_address 可能为空，以路由参数为准
+  const collectionAddress = (params?.name as string) || state.collection_address;
 
   const [collectionItems, setCollectionItems] = useState<any[]>([]);
   const [collectionParams, setCollectionParams] = useState<any>({
@@ -43,7 +47,7 @@ export default function Page() {
 
   async function getCollectionItems() {
     const res = await collectionApi.GetCollectionItems({
-      address: state.collection_address,
+      address: collectionAddress,
       filters: {
         sort: 1,
         status: [],
@@ -66,7 +70,11 @@ export default function Page() {
   return (
     <main className="min-h-screen bg-background text-foreground">
       <CollectionHeader />
-      <CollectionView items={collectionItems} chainId={state.chain_id} />
+      <CollectionView
+        items={collectionItems}
+        chainId={state.chain_id}
+        collectionAddress={collectionAddress}
+      />
     </main>
   );
 }

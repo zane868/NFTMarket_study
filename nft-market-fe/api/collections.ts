@@ -53,10 +53,30 @@ function getCollectionItemDetail(address: string, token_id: string, chain_id: st
     });
 };
 
+// /collections/{address}/bids —— 合集买单（按价格档聚合）
+type GetCollectionBidsParams = {
+    address: string;
+    chain_id: string | number;
+    page?: number;
+    page_size?: number;
+};
+function GetCollectionBids(params: GetCollectionBidsParams) {
+    return request.get(`/collections/${params.address}/bids`, {
+        params: {
+            filters: JSON.stringify({
+                chain_id: params.chain_id,
+                page: params.page ?? 1,
+                page_size: params.page_size ?? 10,
+            }),
+        },
+    });
+};
+
 // eslint-disable-next-line import/no-anonymous-default-export
 export default {
     GetCollections,
     GetCollectionDetail,
     GetCollectionItems,
-    getCollectionItemDetail
+    getCollectionItemDetail,
+    GetCollectionBids,
 };
